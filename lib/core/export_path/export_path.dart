@@ -1,0 +1,17 @@
+export 'package:flutter/material.dart';
+export 'package:get/get.dart';
+export 'package:get/get_utils/src/extensions/internacionalization.dart';
+export 'package:flutter/gestures.dart';
+export '../services/hive_services/hive_service.dart';
+export 'package:flutter_screenutil/flutter_screenutil.dart';
+export 'package:doc_scanner/app.dart';
+export 'package:doc_scanner/core/theme/app_theme.dart';
+export 'package:doc_scanner/features/auth/view/splash_view.dart';
+export 'package:doc_scanner/core/route/app_routes.dart';
+export 'package:doc_scanner/core/utils/gap.dart';
+export 'package:doc_scanner/core/theme/custom_text_theme.dart';
+export 'package:doc_scanner/core/asstes_path/icons_path.dart';
+export 'package:flutter_svg/flutter_svg.dart';
+export 'package:animated_notch_bottom_bar/animated_notch_bottom_bar/animated_notch_bottom_bar.dart';
+export 'package:doc_scanner/core/controler_bindings/controller_binder.dart';
+export 'package:doc_scanner/features/home/view/home_view.dart';
