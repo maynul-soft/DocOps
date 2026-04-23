@@ -1,7 +1,5 @@
-import 'dart:ffi';
-
 import 'package:doc_scanner/core/export_path/export_path.dart';
-import 'package:hive/hive.dart';
+import 'package:doc_scanner/features/custom_camera_view/custom_camera_view.dart';
 import 'package:intl/intl.dart';
 
 class HomeView extends StatefulWidget {
@@ -37,22 +35,40 @@ class _HomeViewState extends State<HomeView> {
                 style: CustomTextTheme.fontSize20bold(context),
               ),
               const SizedBox(height: 20),
-              ListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: 10,
-                itemBuilder: (context, index) {
-                  return buildDocCard(
-                    title: 'Q3 Tax Report 2023',
-                    page: 3,
-                    date: DateTime.now(),
-                  );
-                },
-              ),
+              buildDocListSection(),
             ],
           ),
         ),
       ),
+      floatingActionButton: GestureDetector(
+        onTap: (){
+          // Get.find<ScanNewDocController>().scanNewDocument();
+          Navigator.pushNamed(context, CustomCameraScreen.name);
+        },
+        child: CircleAvatar(
+          radius: 35,
+          backgroundColor: ColorScheme.of(context).primary,
+          child: Icon(Icons.document_scanner, color: Colors.white, size: 30),
+        ),
+      ),
+    );
+  }
+
+  Widget buildDocListSection() {
+    return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: 10,
+      itemBuilder: (context, index) {
+        return buildDocCard(
+          title: 'Q3 Tax Report 2023',
+          page: 3,
+          date: DateTime.now(),
+          onTap: () {
+            Navigator.pushNamed(context, DocDetailVew.name);
+          },
+        );
+      },
     );
   }
 
@@ -60,49 +76,54 @@ class _HomeViewState extends State<HomeView> {
     required String title,
     required int page,
     required DateTime date,
+    required VoidCallback onTap,
   }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      child: SizedBox(
-        child: Row(
-          children: [
-            Container(
-              decoration: BoxDecoration(
-                borderRadius: .circular(10),
-                color: Colors.grey.withAlpha(100),
+    return GestureDetector(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Container(
+          color: Colors.transparent,
+          child: Row(
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  borderRadius: .circular(10),
+                  color: Colors.grey.withAlpha(100),
+                ),
+                height: 100,
+                width: 80,
+                child: Icon(Icons.image),
               ),
-              height: 100,
-              width: 80,
-              child: Icon(Icons.image),
-            ),
-            Gap.width(10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: .start,
-                children: [
-                  Text(
-                    title,
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 2,
-                    style: CustomTextTheme.fontSize18bold(context),
-                  ),
-                  Gap.height(8),
-                  Row(
-                    mainAxisAlignment: .start,
-                    children: [
-                      Icon(Icons.contact_page_outlined, size: 12),
-                      Text(' $page pages'),
-                      Gap.width(10),
-                      CircleAvatar(radius: 2, backgroundColor: Colors.grey),
-                      Gap.width(10),
-                      Text(DateFormat('dd MMM yyyy').format(date)),
-                    ],
-                  ),
-                ],
+              Gap.width(10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: .start,
+                  children: [
+                    Text(
+                      title,
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 2,
+                      style: CustomTextTheme.fontSize18bold(context),
+                    ),
+                    Gap.height(8),
+                    Row(
+                      mainAxisAlignment: .start,
+                      children: [
+                        Icon(Icons.contact_page_outlined, size: 12),
+                        Text(' $page pages'),
+                        Gap.width(10),
+                        CircleAvatar(radius: 2, backgroundColor: Colors.grey),
+                        Gap.width(10),
+                        Text(DateFormat('dd MMM yyyy').format(date)),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-            Icon(Icons.more_vert_outlined, size: 30),
-          ],
+              Icon(Icons.more_vert_outlined, size: 30),
+            ],
+          ),
         ),
       ),
     );
