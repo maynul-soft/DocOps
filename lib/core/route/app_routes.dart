@@ -1,5 +1,5 @@
 import 'package:doc_scanner/core/export_path/export_path.dart';
-import 'package:doc_scanner/features/custom_camera_view/custom_camera_view.dart';
+
 
 class AppRoutes {
   static Route<dynamic> routes(RouteSettings setting) {
@@ -14,6 +14,8 @@ class AppRoutes {
       screenWidget = EditDocView();
     } else if (setting.name == CustomCameraScreen.name) {
       screenWidget = CustomCameraScreen();
+    } else if (setting.name == CapturedDocListView.name) {
+      screenWidget = CapturedDocListView();
     }
     return MaterialPageRoute(builder: (context) => screenWidget);
   }

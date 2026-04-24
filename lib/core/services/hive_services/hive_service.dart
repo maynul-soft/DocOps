@@ -25,7 +25,7 @@ class HiveService {
     await box.put(key, jsonEncode(value));
   }
 
-  static get({required Box box, required String key}) {
+  static dynamic get({required Box box, required String key}) {
     var getData = box.get(key);
     final decodedData = jsonDecode(getData);
     return decodedData;

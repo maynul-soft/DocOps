@@ -1,6 +1,5 @@
 import 'package:doc_scanner/core/export_path/export_path.dart';
-import 'package:flutter/cupertino.dart';
-import 'package:hive/hive.dart';
+
 
 class EditDocView extends StatefulWidget {
   const EditDocView({super.key});
