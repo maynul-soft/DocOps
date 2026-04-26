@@ -24,3 +24,5 @@ export 'package:doc_scanner/features/custom_camera_view/view/custom_camera_view.
 export 'package:logger/logger.dart';
 export 'package:camera/camera.dart';
 export 'package:doc_scanner/core/init_services/init_services.dart';
+export 'package:google_mlkit_object_detection/google_mlkit_object_detection.dart';
+export 'package:hive/hive.dart';

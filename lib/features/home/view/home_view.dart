@@ -1,5 +1,4 @@
 import 'package:doc_scanner/core/export_path/export_path.dart';
-import 'package:doc_scanner/features/custom_camera_view/view/custom_camera_view.dart';
 import 'package:intl/intl.dart';
 
 class HomeView extends StatefulWidget {

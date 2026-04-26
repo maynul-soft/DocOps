@@ -4,6 +4,6 @@ class ControllerBinder extends Bindings {
   @override
   void dependencies() {
     Get.put(ScanNewDocController());
-    Get.put(CustomCameraController());
+    // Get.put(CustomCameraController());
   }
 }

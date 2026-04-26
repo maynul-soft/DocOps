@@ -1,6 +1,8 @@
 import 'package:doc_scanner/core/export_path/export_path.dart';
 import 'package:doc_scanner/features/custom_camera_view/model/flash_model.dart';
-import 'package:hive_flutter/hive_flutter.dart';
+import 'package:flutter/foundation.dart';
+
+
 
 class CustomCameraController extends GetxController {
   CameraController? cameraController;
@@ -8,33 +10,60 @@ class CustomCameraController extends GetxController {
   String hiveBoxName = 'customCameraController';
   String flashMoodKey = 'Flush Mood Key';
   FlashMode flashMode = FlashMode.auto;
+  bool isProcessBusy = false;
+  ObjectDetector? objectDetector;
+  Size? imageSize;
+  bool isCapturing = false;
+  List<DetectedObject> object = [];
 
   int currentCapturedPage = 0;
 
   Future<void> initCamera() async {
     try {
+      objectDetector = ObjectDetector(
+        options: ObjectDetectorOptions(
+          mode: DetectionMode.stream,
+          classifyObjects: true,
+          multipleObjects: false,
+        ),
+      );
+
       final cameras = await availableCameras();
 
-      cameraController = CameraController(cameras.first, ResolutionPreset.high);
+      cameraController = CameraController(
+        cameras.first,
+        ResolutionPreset.high,
+        imageFormatGroup: ImageFormatGroup.nv21,
+      );
+
+      await cameraController!.initialize();
 
       FlashMode flashMod = await getFlashMood();
       flashMode = flashMod;
-
-      await cameraController!.initialize();
       await cameraController!.setFlashMode(flashMod);
-
       update();
+
+      cameraController!.startImageStream((CameraImage image) {
+        if (isProcessBusy) return;
+        isProcessBusy = true;
+
+        processImage(image);
+      });
     } catch (e) {
       Logger().i("Failed To do at Camera Controller because: $e");
     }
   }
 
   Future<void> capture() async {
+    if(isCapturing) return;
+    isCapturing = true;
+
     XFile image = await cameraController!.takePicture();
 
     capturedImages.add(image.path);
 
     debugPrint('pats:======== $capturedImages');
+    isCapturing = false;
     update();
   }
 
@@ -55,6 +84,8 @@ class CustomCameraController extends GetxController {
     try {
       flashMode = flashMod;
       update();
+
+      await cameraController!.setFlashMode(flashMode);
 
       Box box = await HiveService.openBoxIfNeeded(hiveBoxName);
 
@@ -86,7 +117,7 @@ class CustomCameraController extends GetxController {
 
       final flashMode = HiveService.get(box: box, key: flashMoodKey);
 
-      Logger().i('FlashMood: $flashMode');
+      Logger().e('FlashMood: $flashMode');
 
       if (flashMode == null) {
         Logger().i('set auto flash mood FlashMood: $flashMode');
@@ -119,6 +150,41 @@ class CustomCameraController extends GetxController {
     }
   }
 
+  void processImage(CameraImage image) async {
+    try {
+
+      imageSize = Size(image.width.toDouble(), image.height.toDouble());
+
+      final WriteBuffer  allBytes = WriteBuffer();
+
+      for(final plane in image.planes){
+        allBytes.putUint8List(plane.bytes);
+      }
+
+      final bytes = allBytes.done().buffer.asUint8List();
+       
+
+      InputImage inputImage = InputImage.fromBytes(
+        bytes: bytes,
+        metadata: InputImageMetadata(
+          size: Size(image.width.toDouble(), image.height.toDouble()),
+          rotation: InputImageRotation.rotation0deg,
+          format: InputImageFormat.nv21,
+          bytesPerRow: image.planes[0].bytesPerRow,
+        ),
+      );
+
+      final detectedObject = await objectDetector!.processImage(inputImage);
+
+      object = detectedObject;
+      Logger().f(detectedObject.toString());
+      isProcessBusy = false;
+      update();
+    } catch (e) {
+      Logger().i(e.toString());
+    }
+  }
+
   @override
   void onInit() {
     initCamera();
@@ -128,6 +194,7 @@ class CustomCameraController extends GetxController {
   @override
   void onClose() {
     cameraController?.dispose();
+    objectDetector!.close();
     super.onClose();
   }
 }

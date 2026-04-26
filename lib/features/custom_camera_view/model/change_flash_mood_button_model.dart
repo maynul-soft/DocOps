@@ -1,4 +1,3 @@
-import 'package:camera/camera.dart';
 import 'package:doc_scanner/core/export_path/export_path.dart';
 
 class ChangeFlashMoodButtonModel {

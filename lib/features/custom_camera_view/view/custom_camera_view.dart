@@ -2,11 +2,29 @@ import 'dart:io';
 
 import 'package:doc_scanner/core/export_path/export_path.dart';
 import 'package:doc_scanner/features/custom_camera_view/model/change_flash_mood_button_model.dart';
+import 'package:doc_scanner/features/custom_camera_view/widget/object_detector_painter_widget.dart';
 
-class CustomCameraScreen extends StatelessWidget {
-  CustomCameraScreen({super.key});
+class CustomCameraScreen extends StatefulWidget {
+  const CustomCameraScreen({super.key});
 
   static const name = 'Custom camera view';
+
+  @override
+  State<CustomCameraScreen> createState() => _CustomCameraScreenState();
+}
+
+class _CustomCameraScreenState extends State<CustomCameraScreen> {
+  @override
+  void initState() {
+    super.initState();
+    Get.put(CustomCameraController(), permanent: false);
+  }
+
+  @override
+  void dispose() {
+    Get.delete<CustomCameraController>();
+    super.dispose();
+  }
 
   final List<ChangeFlashMoodButtonModel> flashIcons = [
     ChangeFlashMoodButtonModel(
@@ -158,31 +176,46 @@ class CustomCameraScreen extends StatelessWidget {
     CameraController cam,
     CustomCameraController controller,
   ) {
-    return GestureDetector(
-      onTap: () {
-        Get.toNamed(CapturedDocListView.name);
-      },
-      child: SizedBox(
-        width: double.maxFinite,
-        height: MediaQuery.of(context).size.height * 0.750,
-        child: Stack(
-          children: [
-            Positioned.fill(child: CameraPreview(cam)),
-            controller.capturedImages.isNotEmpty
-                ? Positioned(
-                    bottom: 10,
-                    right: 10,
-                    child: Image.file(
-                      height: 50,
-                      width: 50,
-                      fit: BoxFit.fill,
-                      File(controller.capturedImages.first),
-                    ),
-                  )
-                : SizedBox.shrink(),
+    final screenSize = Size(
+      MediaQuery.of(context).size.width,
+      MediaQuery.of(context).size.height * 0.750,
+    );
 
-            controller.capturedImages.isNotEmpty
-                ? Positioned(
+    return SizedBox(
+      width: double.maxFinite,
+      height: MediaQuery.of(context).size.height * 0.750,
+      child: Stack(
+        children: [
+          Positioned.fill(child: CameraPreview(cam)),
+          if (controller.imageSize != null && controller.object.isNotEmpty)
+            Positioned.fill(
+              child: CustomPaint(
+                painter: ObjectDetectorPainter(
+                  objects: controller.object,
+                  imageSize: controller.imageSize!,
+                  screenSize: screenSize,
+                ),
+              ),
+            ),
+          controller.capturedImages.isNotEmpty
+              ? Positioned(
+                  bottom: 10,
+                  right: 10,
+                  child: Image.file(
+                    height: 50,
+                    width: 50,
+                    fit: BoxFit.fill,
+                    File(controller.capturedImages.first),
+                  ),
+                )
+              : SizedBox.shrink(),
+
+          controller.capturedImages.isNotEmpty
+              ? GestureDetector(
+                  onTap: () {
+                    Get.toNamed(CapturedDocListView.name);
+                  },
+                  child: Positioned(
                     bottom: 45,
                     right: 0,
                     child: Container(
@@ -200,10 +233,10 @@ class CustomCameraScreen extends StatelessWidget {
                         ).copyWith(color: Colors.white),
                       ),
                     ),
-                  )
-                : SizedBox.shrink(),
-          ],
-        ),
+                  ),
+                )
+              : SizedBox.shrink(),
+        ],
       ),
     );
   }
@@ -219,6 +252,7 @@ class CustomCameraScreen extends StatelessWidget {
         children: [
           buildCustomButton(
             onTap: () {
+              Get.delete<CustomCameraController>();
               Get.back();
             },
             child: Icon(Icons.close, size: 30, color: Colors.blue),
@@ -234,7 +268,10 @@ class CustomCameraScreen extends StatelessWidget {
     );
   }
 
-  void onTapToChangeFlashMode(BuildContext context, CustomCameraController controller ) {
+  void onTapToChangeFlashMode(
+    BuildContext context,
+    CustomCameraController controller,
+  ) {
     showDialog(
       context: context,
       builder: (context) {
@@ -245,17 +282,21 @@ class CustomCameraScreen extends StatelessWidget {
                 mainAxisAlignment: .spaceAround,
                 children: flashIcons.asMap().entries.map((item) {
                   return GestureDetector(
-                    onTap: (){
-                      controller.saveFlushMood(item.value.flashMode);
+                    onTap: () async {
+                      await controller.saveFlushMood(item.value.flashMode);
+                      Navigator.pop(context);
                     },
-                    child: Icon(item.value.icon,
-                    color: item.value.flashMode == controller.flashMode? Colors.blue:null
+                    child: Icon(
+                      item.value.icon,
+                      color: item.value.flashMode == controller.flashMode
+                          ? Colors.blue
+                          : null,
                     ),
                   );
                 }).toList(),
               ),
             );
-          }
+          },
         );
       },
     );
