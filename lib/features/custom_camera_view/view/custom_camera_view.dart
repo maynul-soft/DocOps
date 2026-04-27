@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:doc_scanner/core/export_path/export_path.dart';
 import 'package:doc_scanner/features/custom_camera_view/model/change_flash_mood_button_model.dart';
-import 'package:doc_scanner/features/custom_camera_view/widget/object_detector_painter_widget.dart';
+import 'package:doc_scanner/features/custom_camera_view/widget/document_corner_painter.dart';
 
 class CustomCameraScreen extends StatefulWidget {
   const CustomCameraScreen({super.key});
@@ -18,6 +18,7 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
   void initState() {
     super.initState();
     Get.put(CustomCameraController(), permanent: false);
+    
   }
 
   @override
@@ -115,7 +116,7 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
             flex: 1,
             child: buildCustomButton(
               onTap: () {
-                controller.capture();
+                controller.captureAndProcess();
               },
               child: Container(
                 padding: EdgeInsets.all(10),
@@ -187,11 +188,12 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
       child: Stack(
         children: [
           Positioned.fill(child: CameraPreview(cam)),
-          if (controller.imageSize != null && controller.object.isNotEmpty)
+          if (controller.detectedCorners != null &&
+              controller.imageSize != null)
             Positioned.fill(
               child: CustomPaint(
-                painter: ObjectDetectorPainter(
-                  objects: controller.object,
+                painter: DocumentCornerPainter(
+                  corners: controller.detectedCorners!,
                   imageSize: controller.imageSize!,
                   screenSize: screenSize,
                 ),
@@ -211,13 +213,13 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
               : SizedBox.shrink(),
 
           controller.capturedImages.isNotEmpty
-              ? GestureDetector(
-                  onTap: () {
-                    Get.toNamed(CapturedDocListView.name);
-                  },
-                  child: Positioned(
-                    bottom: 45,
-                    right: 0,
+              ? Positioned(
+                  bottom: 45,
+                  right: 0,
+                  child: GestureDetector(
+                    onTap: () {
+                      Get.toNamed(CapturedDocListView.name);
+                    },
                     child: Container(
                       padding: EdgeInsets.all(5),
                       decoration: BoxDecoration(
