@@ -3,9 +3,6 @@ import 'dart:math' as Math;
 import 'package:doc_scanner/core/export_path/export_path.dart';
 import 'package:doc_scanner/features/custom_camera_view/model/processed_image_model.dart';
 import 'package:opencv_dart/opencv_dart.dart' as cv;
-import 'package:camera/camera.dart';
-import 'package:flutter/material.dart';
-import 'package:logger/logger.dart';
 
 class TestOpenCv {
   static Uint8List? processAndWarp(cv.Mat src, List<cv.Point> points) {
