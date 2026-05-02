@@ -1,8 +1,10 @@
+import 'dart:io';
 import 'package:doc_scanner/core/export_path/export_path.dart';
 
 
 class EditDocView extends StatefulWidget {
-  const EditDocView({super.key});
+  final String imagePath;
+  const EditDocView({super.key, required this.imagePath});
 
   static const name = 'EditDocView';
 
@@ -27,6 +29,10 @@ class _EditDocViewState extends State<EditDocView> {
               height: size.height - 250,
               width: double.infinity,
               decoration: BoxDecoration(color: Colors.grey.withAlpha(50)),
+              child: Image.file(
+                File(widget.imagePath),
+                fit: BoxFit.contain,
+              ),
             ),
             Gap.height(10),
             Expanded(

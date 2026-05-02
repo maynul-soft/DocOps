@@ -25,3 +25,4 @@ export 'package:logger/logger.dart';
 export 'package:camera/camera.dart';
 export 'package:doc_scanner/core/init_services/init_services.dart';
 export 'package:hive/hive.dart';
+export 'package:doc_scanner/core/export_path/export_path_handler.dart';

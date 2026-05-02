@@ -16,15 +16,18 @@ class _CapturedDocListViewState extends State<CapturedDocListView> {
   @override
   void initState() {
     super.initState();
+    Get.find<CustomCameraController>().isCameraScreenOn = false;
     _pageController = PageController(
       initialPage: Get.find<CustomCameraController>().capturedImages.length - 1,
       viewportFraction: 0.85,
     );
-    Get.find<CustomCameraController>().currentCapturedPage = Get.find<CustomCameraController>().capturedImages.length - 1;
+    Get.find<CustomCameraController>().currentCapturedPage =
+        Get.find<CustomCameraController>().capturedImages.length - 1;
   }
 
   @override
   void dispose() {
+    Get.find<CustomCameraController>().isCameraScreenOn = true;
     _pageController.dispose();
     super.dispose();
   }
@@ -68,7 +71,7 @@ class _CapturedDocListViewState extends State<CapturedDocListView> {
                               Gap.width(4),
 
                               Text(
-                                '${controller.currentCapturedPage+1}/${controller.capturedImages.length}',
+                                '${controller.currentCapturedPage + 1}/${controller.capturedImages.length}',
                                 style: TextStyle(color: Colors.white),
                               ),
                               Icon(Icons.arrow_right_sharp),
@@ -89,17 +92,31 @@ class _CapturedDocListViewState extends State<CapturedDocListView> {
                     itemCount: controller.capturedImages.length + 1,
                     itemBuilder: (BuildContext context, int index) {
                       return index < controller.capturedImages.length
-                          ? Container(margin: EdgeInsets.symmetric(horizontal: 10, 
-                          vertical:  controller.currentCapturedPage == index? 30: 0
-                          
-                          ),
+                          ? Container(
+                              margin: EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical:
+                                    controller.currentCapturedPage == index
+                                    ? 30
+                                    : 0,
+                              ),
                               decoration: BoxDecoration(),
                               child: Stack(
                                 children: [
                                   Positioned.fill(
-                                    child: Image.file(
-                                      fit: BoxFit.fill,
-                                      File(controller.capturedImages[index]),
+                                    child: GestureDetector(
+                                      onTap: () {
+                                        Get.to(
+                                          () => EditDocView(
+                                            imagePath: controller
+                                                .capturedImages[index],
+                                          ),
+                                        );
+                                      },
+                                      child: Image.file(
+                                        fit: BoxFit.fill,
+                                        File(controller.capturedImages[index]),
+                                      ),
                                     ),
                                   ),
                                   Positioned(
@@ -122,7 +139,7 @@ class _CapturedDocListViewState extends State<CapturedDocListView> {
                                 ],
                               ),
                             )
-                          : buildAddNewPageSection(context,controller, index);
+                          : buildAddNewPageSection(context, controller, index);
                     },
                   ),
                 ),
@@ -140,8 +157,9 @@ class _CapturedDocListViewState extends State<CapturedDocListView> {
         Get.back();
       },
       child: Container(
-        margin: EdgeInsets.symmetric(horizontal: 10,
-        vertical:  controller.currentCapturedPage == index? 30: 0
+        margin: EdgeInsets.symmetric(
+          horizontal: 10,
+          vertical: controller.currentCapturedPage == index ? 30 : 0,
         ),
         decoration: BoxDecoration(
           border: Border.all(width: 1, color: Colors.blue),

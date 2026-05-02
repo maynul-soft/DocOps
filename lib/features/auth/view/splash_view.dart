@@ -14,6 +14,7 @@ class _SplashViewState extends State<SplashView> {
     await Future.delayed(Duration(seconds: 2));
     if (!mounted) return;
     Navigator.pushNamed(context, HomeView.name);
+    // Navigator.pushNamed(context, TestFromImageView.name);
   }
 
   @override

@@ -1,7 +1,7 @@
 import 'package:doc_scanner/core/export_path/export_path.dart';
+import 'package:doc_scanner/features/custom_camera_view/controller/test_open_cv.dart';
 import 'package:doc_scanner/features/custom_camera_view/model/flash_model.dart';
-import 'package:doc_scanner/features/custom_camera_view/service/document_processor.dart';
-import 'package:flutter/foundation.dart';
+import 'package:doc_scanner/features/custom_camera_view/model/processed_image_model.dart';
 import 'package:opencv_dart/opencv.dart' as cv;
 
 class CustomCameraController extends GetxController {
@@ -13,13 +13,15 @@ class CustomCameraController extends GetxController {
   bool isProcessBusy = false;
   Size? imageSize;
   bool isCapturing = false;
-  DocumentCorners? detectedCorners;
+  bool isCameraScreenOn = true;
+  List<cv.Point>? corners;
+
+  List<ProcessedImageModel> processedImageForTest = [];
 
   int currentCapturedPage = 0;
 
   Future<void> initCamera() async {
     try {
-    
       final cameras = await availableCameras();
 
       cameraController = CameraController(
@@ -36,18 +38,29 @@ class CustomCameraController extends GetxController {
       update();
 
       cameraController!.startImageStream((CameraImage image) {
-        if (isProcessBusy) return;
+        if (isProcessBusy || !isCameraScreenOn) return;
+
+        // Note: the Mat is rotated 90 degrees in TestOpenCv, so swap width and height
+        imageSize = Size(image.height.toDouble(), image.width.toDouble());
+
         isProcessBusy = true;
 
-        Logger().d("Streaming");
+        Logger().d('Streaming');
 
-        processImage(image);
+        final mat = TestOpenCv.convertImageToMat(image);
+
+        List<cv.Point>? points = TestOpenCv.processDocuments(mat);
+
+        Logger().e(points.toString());
+
+        corners = points;
+        isProcessBusy = false;
+        if (!isClosed) update();
       });
     } catch (e) {
       Logger().i("Failed To do at Camera Controller because: $e");
     }
   }
-
 
   void updatePageNumber(int pageNumber) {
     currentCapturedPage = pageNumber;
@@ -132,146 +145,62 @@ class CustomCameraController extends GetxController {
     }
   }
 
-  void processImage(CameraImage image) async {
-    try {
-      Logger().d('Image processing started');
-
-      final mat = _convertCameraImageToMat(image);
-      if (mat == null) {
-        isProcessBusy = false;
-        Logger().e("Failed to get mat");
-        return;
-      }
-
-      imageSize = Size(image.width.toDouble(), image.height.toDouble());
-
-      final corners = await DocumentProcessor.detectDocumentCorners(mat);
-      detectedCorners = corners;
-
-      Logger().e(
-        'Corners: ${detectedCorners != null ? "পাওয়া গেছে ✅" : "পাওয়া যায়নি ❌"}',
-      );
-      Logger().e('ImageSize: $imageSize');
-      isProcessBusy = false;
-      update();
-    } catch (e) {
-      Logger().i(e.toString());
-    }
-  }
-
-  cv.Mat? _convertCameraImageToMat(CameraImage image) {
-    try {
-      Logger().e('CV mat doing');
-
-      if (image.format.group == ImageFormatGroup.yuv420) {
-        final int width = image.width;
-        final int height = image.height;
-
-        // ✅ imageSize এখানে সেট করো — portrait হলে swap করো
-        imageSize = Size(height.toDouble(), width.toDouble()); // ✅ swap
-
-        final yPlane = image.planes[0];
-        final uPlane = image.planes[1];
-        final vPlane = image.planes[2];
-
-        final nv21 = Uint8List(width * height * 3 ~/ 2);
-
-        for (int i = 0; i < height; i++) {
-          nv21.setRange(
-            i * width,
-            (i + 1) * width,
-            yPlane.bytes,
-            i * yPlane.bytesPerRow,
-          );
-        }
-
-        int uvIndex = width * height;
-        for (int i = 0; i < height ~/ 2; i++) {
-          for (int j = 0; j < width ~/ 2; j++) {
-            nv21[uvIndex++] = vPlane.bytes[i * vPlane.bytesPerRow + j];
-            nv21[uvIndex++] = uPlane.bytes[i * uPlane.bytesPerRow + j];
-          }
-        }
-
-        final yuvMat = cv.Mat.fromList(
-          height + height ~/ 2,
-          width,
-          cv.MatType.CV_8UC1,
-          nv21,
-        );
-
-        // ✅ YUV → BGR
-        final bgrMat = cv.cvtColor(yuvMat, cv.COLOR_YUV2BGR_NV21);
-
-        // ✅ Portrait এ rotate করো
-        final rotatedMat = cv.rotate(bgrMat, cv.ROTATE_90_CLOCKWISE);
-
-        yuvMat.dispose();
-        bgrMat.dispose();
-
-        return rotatedMat;
-      } else if (image.format.group == ImageFormatGroup.bgra8888) {
-        // iOS
-        imageSize = Size(image.width.toDouble(), image.height.toDouble());
-        final bytes = image.planes[0].bytes;
-        final mat = cv.Mat.fromList(
-          image.height,
-          image.width,
-          cv.MatType.CV_8UC4,
-          bytes,
-        );
-        final bgrMat = cv.cvtColor(mat, cv.COLOR_BGRA2BGR);
-        mat.dispose();
-        return bgrMat;
-      }
-      return null;
-    } catch (e) {
-      Logger().e('Convert error: $e');
-      return null;
-    }
-  }
-
   Future<String?> captureAndProcess() async {
     if (isCapturing) return null;
     try {
       isCapturing = true;
       update();
 
-      await cameraController!.stopImageStream();
+      // Take the picture
       XFile image = await cameraController!.takePicture();
+      final bytes = await image.readAsBytes();
 
-      String? processedPath;
+      // Convert to Mat for processing
+      final mat = cv.imdecode(bytes, cv.IMREAD_COLOR);
 
-      if (detectedCorners != null) {
-        // ✅ Crop + Perspective transform
-        processedPath = await DocumentProcessor.processDocument(
-          imagePath: image.path,
-          corners: detectedCorners!,
-          applyBW: true,
-        );
+      // Detect corners in the high-res image
+      final detectedCorners = TestOpenCv.processDocuments(mat);
+
+      if (detectedCorners != null && detectedCorners.length == 4) {
+        // Warp and apply B&W
+        final processedBytes = TestOpenCv.processAndWarp(mat, detectedCorners);
+
+        if (processedBytes != null) {
+          // Save processed image
+          final fileName = 'doc_${DateTime.now().millisecondsSinceEpoch}.jpg';
+          final path = await ExportPath.saveImageToDir(
+            processedBytes,
+            fileName,
+          );
+          capturedImages.add(path);
+
+          mat.dispose();
+          return path;
+        }
       }
 
-      capturedImages.add(processedPath ?? image.path);
-
-      await cameraController!.startImageStream((img) {
-        if (isProcessBusy) return;
-        isProcessBusy = true;
-        processImage(img);
-      });
-
-      return processedPath;
+      // Fallback: if detection fails, save the original (or handle as error)
+      capturedImages.add(image.path);
+      mat.dispose();
+      return image.path;
     } catch (e) {
       Logger().e('Capture error: $e');
       return null;
     } finally {
       isCapturing = false;
-      update();
+      if (!isClosed) update();
     }
+  }
+
+  void addImagesForProcessedList(ProcessedImageModel image) {
+    processedImageForTest.add(image);
+    update();
   }
 
   Future<String?> generatePDF() async {
     if (capturedImages.isEmpty) return null;
-    return await DocumentProcessor.createPDF(capturedImages);
+    // PDF generation is temporarily disabled as DocumentProcessor was removed.
+    return null;
   }
 
   @override
@@ -282,6 +211,9 @@ class CustomCameraController extends GetxController {
 
   @override
   void onClose() {
+    if (cameraController != null && cameraController!.value.isStreamingImages) {
+      cameraController!.stopImageStream();
+    }
     cameraController?.dispose();
     super.onClose();
   }

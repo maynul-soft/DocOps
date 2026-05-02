@@ -1,6 +1,5 @@
 import 'package:doc_scanner/core/export_path/export_path.dart';
 
-
 class AppRoutes {
   static Route<dynamic> routes(RouteSettings setting) {
     late final Widget screenWidget;
@@ -11,7 +10,8 @@ class AppRoutes {
     } else if (setting.name == DocDetailVew.name) {
       screenWidget = DocDetailVew();
     } else if (setting.name == EditDocView.name) {
-      screenWidget = EditDocView();
+      final args = setting.arguments as String? ?? '';
+      screenWidget = EditDocView(imagePath: args);
     } else if (setting.name == CustomCameraScreen.name) {
       screenWidget = CustomCameraScreen();
     } else if (setting.name == CapturedDocListView.name) {

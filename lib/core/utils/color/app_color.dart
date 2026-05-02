@@ -18,9 +18,9 @@ class AppColors {
   // static get greenAccent => _greenAccent;
 
   static MaterialColor getMaterialColor(Color color) {
-    int red = color.red;
-    int green = color.green;
-    int blue = color.blue;
+    int red = (color.r * 255.0).round().clamp(0, 255);
+    int green = (color.g * 255.0).round().clamp(0, 255);
+    int blue = (color.b * 255.0).round().clamp(0, 255);
 
     final Map<int, Color> shades = {
       50: Color.fromRGBO(red, green, blue, .1),
@@ -35,6 +35,6 @@ class AppColors {
       900: Color.fromRGBO(red, green, blue, 1),
     };
 
-    return MaterialColor(color.value, shades);
+    return MaterialColor(color.toARGB32(), shades);
   }
 }

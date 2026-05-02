@@ -1,84 +1,72 @@
-import 'package:doc_scanner/core/export_path/export_path.dart';
-import 'package:doc_scanner/features/custom_camera_view/service/document_processor.dart';
+import 'package:flutter/material.dart';
+import 'package:opencv_dart/opencv_dart.dart' as cv;
 
 class DocumentCornerPainter extends CustomPainter {
-  final DocumentCorners corners;
-  final Size imageSize;
-  final Size screenSize;
+  final List<cv.Point> points;
+  final Size previewSize; // Camera resolution (e.g. 720x1280)
 
-  DocumentCornerPainter({
-    required this.corners,
-    required this.imageSize,
-    required this.screenSize,
-  });
+  DocumentCornerPainter({required this.points, required this.previewSize});
 
   @override
   void paint(Canvas canvas, Size size) {
-   
-    final bool isRotated = imageSize.width < imageSize.height == false;
+    if (points.isEmpty) return;
 
-    final double imgW = isRotated ? imageSize.height : imageSize.width;
-    final double imgH = isRotated ? imageSize.width : imageSize.height;
+    // Scaling Factor: Resolution theke screen size e convert korar ratio
+    // Camera image sadharonoto landscape e thake, tai swap kora lagte pare
+    final double scaleX = size.width / previewSize.width;
+    final double scaleY = size.height / previewSize.height;
 
-    final double scaleX = screenSize.width / imgW;
-    final double scaleY = screenSize.height / imgH;
+    final List<Offset> offsets = points.map((p) {
+      return Offset(p.x * scaleX, p.y * scaleY);
+    }).toList();
 
-    
-    Offset scaled(cvPoint) {
-      return Offset(
-        cvPoint.x * scaleX,
-        cvPoint.y * scaleY,
-      );
+    final paint = Paint()
+      ..color = Colors.deepOrange.withOpacity(0.8)
+      ..strokeWidth = 2.5
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    for (int i = 0; i < offsets.length; i += 4) {
+      if (i + 3 >= offsets.length) break;
+
+      final path = Path()
+        ..moveTo(offsets[i].dx, offsets[i].dy)
+        ..lineTo(offsets[i + 1].dx, offsets[i + 1].dy)
+        ..lineTo(offsets[i + 2].dx, offsets[i + 2].dy)
+        ..lineTo(offsets[i + 3].dx, offsets[i + 3].dy)
+        ..close();
+
+      // Box ta draw kora
+      canvas.drawPath(path, paint);
+
+      // Corner circles - Premium Avatar Style
+      final cornerPaint = Paint()
+        ..color = Colors.blue
+        ..style = PaintingStyle.fill;
+
+      final dotBorderPaint = Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2;
+
+      for (int j = 0; j < 4; j++) {
+        final p1 = offsets[i + j];
+        final p2 = offsets[i + (j + 1) % 4];
+        final midpoint = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
+
+        // Draw Corner Dots
+        canvas.drawCircle(p1, 10, cornerPaint);
+        canvas.drawCircle(p1, 10, dotBorderPaint);
+
+        // Draw Midpoint Dots (Professional Look)
+        canvas.drawCircle(midpoint, 8, cornerPaint);
+        canvas.drawCircle(midpoint, 8, dotBorderPaint);
+      }
     }
-
-    final tl = scaled(corners.topLeft);
-    final tr = scaled(corners.topRight);
-    final bl = scaled(corners.bottomLeft);
-    final br = scaled(corners.bottomRight);
-
-    
-    final fillPaint = Paint()
-      ..color = Colors.green.withAlpha(50)
-      ..style = PaintingStyle.fill;
-
-    // ✅ সবুজ border
-    final borderPaint = Paint()
-      ..color = Colors.green
-      ..strokeWidth = 3.0
-      ..style = PaintingStyle.stroke;
-
-    // ✅ Path আঁকো
-    final path = Path()
-      ..moveTo(tl.dx, tl.dy)
-      ..lineTo(tr.dx, tr.dy)
-      ..lineTo(br.dx, br.dy)
-      ..lineTo(bl.dx, bl.dy)
-      ..close();
-
-    canvas.drawPath(path, fillPaint);
-    canvas.drawPath(path, borderPaint);
-
-    // ✅ Corner এ circle আঁকো
-    final circlePaint = Paint()
-      ..color = Colors.green
-      ..style = PaintingStyle.fill;
-
-    final circleBorderPaint = Paint()
-      ..color = Colors.white
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke;
-
-    for (final point in [tl, tr, bl, br]) {
-      canvas.drawCircle(point, 10, circlePaint);
-      canvas.drawCircle(point, 10, circleBorderPaint);
-    }
-
-    
   }
 
   @override
-  bool shouldRepaint(DocumentCornerPainter old) =>
-      old.corners != corners ||
-      old.imageSize != imageSize ||
-      old.screenSize != screenSize;
+  bool shouldRepaint(covariant DocumentCornerPainter oldDelegate) {
+    return oldDelegate.points != points;
+  }
 }

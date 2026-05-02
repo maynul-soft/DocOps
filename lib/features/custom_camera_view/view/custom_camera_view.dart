@@ -18,7 +18,6 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
   void initState() {
     super.initState();
     Get.put(CustomCameraController(), permanent: false);
-    
   }
 
   @override
@@ -177,10 +176,10 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
     CameraController cam,
     CustomCameraController controller,
   ) {
-    final screenSize = Size(
-      MediaQuery.of(context).size.width,
-      MediaQuery.of(context).size.height * 0.750,
-    );
+    // final screenSize = Size(
+    //   MediaQuery.of(context).size.width,
+    //   MediaQuery.of(context).size.height * 0.750,
+    // );
 
     return SizedBox(
       width: double.maxFinite,
@@ -188,14 +187,12 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
       child: Stack(
         children: [
           Positioned.fill(child: CameraPreview(cam)),
-          if (controller.detectedCorners != null &&
-              controller.imageSize != null)
+          if (controller.corners != null && controller.imageSize != null)
             Positioned.fill(
               child: CustomPaint(
                 painter: DocumentCornerPainter(
-                  corners: controller.detectedCorners!,
-                  imageSize: controller.imageSize!,
-                  screenSize: screenSize,
+                  points: controller.corners!,
+                  previewSize: controller.imageSize!,
                 ),
               ),
             ),
@@ -203,11 +200,16 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
               ? Positioned(
                   bottom: 10,
                   right: 10,
-                  child: Image.file(
-                    height: 50,
-                    width: 50,
-                    fit: BoxFit.fill,
-                    File(controller.capturedImages.first),
+                  child: GestureDetector(
+                    onTap: () {
+                      Get.toNamed(CapturedDocListView.name);
+                    },
+                    child: Image.file(
+                      height: 50,
+                      width: 50,
+                      fit: BoxFit.fill,
+                      File(controller.capturedImages.first),
+                    ),
                   ),
                 )
               : SizedBox.shrink(),
@@ -216,24 +218,19 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
               ? Positioned(
                   bottom: 45,
                   right: 0,
-                  child: GestureDetector(
-                    onTap: () {
-                      Get.toNamed(CapturedDocListView.name);
-                    },
-                    child: Container(
-                      padding: EdgeInsets.all(5),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(width: 1, color: Colors.white),
-                        color: Colors.red,
-                      ),
+                  child: Container(
+                    padding: EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(width: 1, color: Colors.white),
+                      color: Colors.red,
+                    ),
 
-                      child: Text(
-                        controller.capturedImages.length.toString(),
-                        style: CustomTextTheme.fontSize12(
-                          context,
-                        ).copyWith(color: Colors.white),
-                      ),
+                    child: Text(
+                      controller.capturedImages.length.toString(),
+                      style: CustomTextTheme.fontSize12(
+                        context,
+                      ).copyWith(color: Colors.white),
                     ),
                   ),
                 )
@@ -254,7 +251,6 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
         children: [
           buildCustomButton(
             onTap: () {
-              Get.delete<CustomCameraController>();
               Get.back();
             },
             child: Icon(Icons.close, size: 30, color: Colors.blue),
@@ -286,6 +282,7 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
                   return GestureDetector(
                     onTap: () async {
                       await controller.saveFlushMood(item.value.flashMode);
+                      if (!context.mounted) return;
                       Navigator.pop(context);
                     },
                     child: Icon(
