@@ -383,76 +383,7 @@ class TestOpenCv {
     }
   }
 
-  // static List<cv.Point>? processDocuments(cv.Mat src) {
-  //   // Make grayscale
-
-  //   final gray = cv.cvtColor(src, cv.COLOR_BGR2GRAY);
-
-  //   debugPrint('gray ====== $gray');
-
-  //   // make blur
-
-  //   final blurred = cv.gaussianBlur(gray, (5, 5), 0);
-
-  //   debugPrint('blurred ====== $blurred');
-
-  //   // Canny edge detection
-
-  //   final canny = cv.canny(blurred, 75, 200);
-
-  //   debugPrint('canny ====== $canny');
-
-  //   // Contours
-
-  //   final (contours, _) = cv.findContours(
-  //     canny,
-  //     cv.RETR_EXTERNAL,
-  //     cv.CHAIN_APPROX_SIMPLE,
-  //   );
-
-  //   debugPrint('contours ====== $contours');
-
-  //   cv.VecPoint? largeCounter;
-  //   double maxArea = 0;
-
-  //   //find the biggest shape
-
-  //   for (final cont in contours) {
-  //     final area = cv.contourArea(cont);
-
-  //     if (area > 1000) {
-  //       final perimeter = cv.arcLength(cont, true);
-
-  //       final approx = cv.approxPolyDP(cont, 0.02 * perimeter, true);
-
-  //       if (approx.length == 4 && area > maxArea) {
-  //         largeCounter?.dispose();
-  //         largeCounter = approx;
-  //         maxArea = area;
-
-  //         debugPrint('approx ====== $approx');
-  //       } else {
-  //         approx.dispose();
-  //       }
-  //     }
-  //   }
-
-  //   gray.dispose();
-  //   canny.dispose();
-  //   blurred.dispose();
-
-  //   if (largeCounter != null && largeCounter.isNotEmpty) {
-  //     final points = <cv.Point>[];
-  //     for (int i = 0; i < largeCounter.length; i++) {
-  //       points.add(largeCounter[i]);
-  //     }
-
-  //     largeCounter.dispose();
-
-  //     debugPrint('points ====== $points');
-
-  //     return points;
-  //   }
-  //   return null;
-  // }
+  
 }
+
+
