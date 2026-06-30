@@ -44,29 +44,42 @@ class TestOpenCv {
     final m = cv.getPerspectiveTransform(srcPoints, dstPoints);
     final warped = cv.warpPerspective(src, m, (maxWidth, maxHeight));
 
-    // 4. Black and White Enhancement (Professional Scanner Look)
-    final gray = cv.cvtColor(warped, cv.COLOR_BGR2GRAY);
+    // 4. Magic Color Enhancement (CamScanner Style)
+    final enhanced = applyMagicColor(warped);
 
-    final bw = cv.adaptiveThreshold(
-      gray,
-      255,
-      cv.ADAPTIVE_THRESH_GAUSSIAN_C,
-      cv.THRESH_BINARY,
-      31,
-      15,
-    );
-
-    final (_, encoded) = cv.imencode('.jpg', bw);
+    final (_, encoded) = cv.imencode('.jpg', enhanced);
 
     // Cleanup
     srcPoints.dispose();
     dstPoints.dispose();
     m.dispose();
     warped.dispose();
-    gray.dispose();
-    bw.dispose();
+    enhanced.dispose();
 
     return encoded;
+  }
+
+  static cv.Mat applyMagicColor(cv.Mat src) {
+    // Noise Reduction
+    final blurred = cv.gaussianBlur(src, (3, 3), 0);
+
+    // Increase contrast and brightness (Magic Color effect)
+    // Alpha (contrast) 1.2, Beta (brightness) 10
+    final adjusted = src.convertTo(src.type, alpha: 1.2, beta: 10);
+
+    // Sharpening
+    final kernel = cv.Mat.fromList(3, 3, cv.MatType.CV_32FC1, [
+      0.0, -1.0, 0.0,
+      -1.0, 5.0, -1.0,
+      0.0, -1.0, 0.0,
+    ]);
+    final sharpened = cv.filter2D(adjusted, -1, kernel);
+
+    blurred.dispose();
+    adjusted.dispose();
+    kernel.dispose();
+
+    return sharpened;
   }
 
   static List<cv.Point> _sortPoints(List<cv.Point> pts) {
@@ -133,12 +146,13 @@ class TestOpenCv {
     bool isTestMode = false,
   }) {
     // Optimization: Resize large images for faster detection
-    final originalSize = Size(src.cols.toDouble(), src.rows.toDouble());
+    // Using a smaller scale (500px) for real-time streaming
+    final targetSize = 500;
     double scale = 1.0;
     cv.Mat detectionMat = src;
 
-    if (src.cols > 1000 || src.rows > 1000) {
-      scale = 1000 / Math.max(src.cols, src.rows);
+    if (src.cols > targetSize || src.rows > targetSize) {
+      scale = targetSize / Math.max(src.cols, src.rows);
       detectionMat = cv.resize(src, (0, 0), fx: scale, fy: scale);
     }
 
@@ -382,8 +396,4 @@ class TestOpenCv {
       }
     }
   }
-
-  
 }
-
-

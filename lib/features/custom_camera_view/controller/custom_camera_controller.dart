@@ -15,6 +15,11 @@ class CustomCameraController extends GetxController {
   bool isCapturing = false;
   bool isCameraScreenOn = true;
   List<cv.Point>? corners;
+  List<List<cv.Point>> cornerBuffer = [];
+  static const int bufferSize = 5;
+
+  bool isFlashing = false;
+  bool isSavingDoc = false;
 
   List<ProcessedImageModel> processedImageForTest = [];
 
@@ -51,9 +56,30 @@ class CustomCameraController extends GetxController {
 
         List<cv.Point>? points = TestOpenCv.processDocuments(mat);
 
-        Logger().e(points.toString());
+        if (points != null && points.length == 4) {
+          // Add to buffer for smoothing
+          cornerBuffer.add(points);
+          if (cornerBuffer.length > bufferSize) {
+            cornerBuffer.removeAt(0);
+          }
 
-        corners = points;
+          // Calculate average corners
+          corners = _getAverageCorners();
+        } else {
+          // If no detection, clear corners slowly or keep last good one
+          // For now, let's just keep the last one but clear it if it's too old
+          if (cornerBuffer.isNotEmpty) {
+            cornerBuffer.removeAt(0);
+            if (cornerBuffer.isEmpty) {
+              corners = null;
+            } else {
+              corners = _getAverageCorners();
+            }
+          } else {
+            corners = null;
+          }
+        }
+
         isProcessBusy = false;
         if (!isClosed) update();
       });
@@ -145,25 +171,56 @@ class CustomCameraController extends GetxController {
     }
   }
 
+  List<cv.Point> _getAverageCorners() {
+    if (cornerBuffer.isEmpty) return [];
+    List<cv.Point> avg = [
+      cv.Point(0, 0),
+      cv.Point(0, 0),
+      cv.Point(0, 0),
+      cv.Point(0, 0)
+    ];
+
+    for (var frame in cornerBuffer) {
+      for (int i = 0; i < 4; i++) {
+        avg[i] = cv.Point(avg[i].x + frame[i].x, avg[i].y + frame[i].y);
+      }
+    }
+
+    return avg
+        .map((p) => cv.Point(p.x ~/ cornerBuffer.length, p.y ~/ cornerBuffer.length))
+        .toList();
+  }
+
   Future<String?> captureAndProcess() async {
     if (isCapturing) return null;
     try {
       isCapturing = true;
+      isFlashing = true; // Trigger flash animation
       update();
 
       // Take the picture
       XFile image = await cameraController!.takePicture();
       final bytes = await image.readAsBytes();
 
+      // End flash after a short delay
+      Future.delayed(const Duration(milliseconds: 100), () {
+        isFlashing = false;
+        isSavingDoc = true; // Trigger "saving" animation
+        update();
+      });
+
       // Convert to Mat for processing
       final mat = cv.imdecode(bytes, cv.IMREAD_COLOR);
 
-      // Detect corners in the high-res image
-      final detectedCorners = TestOpenCv.processDocuments(mat);
+      // Use smoothed corners if available, else detect in high-res
+      List<cv.Point>? finalCorners = corners;
+      if (finalCorners == null || finalCorners.length != 4) {
+        finalCorners = TestOpenCv.processDocuments(mat);
+      }
 
-      if (detectedCorners != null && detectedCorners.length == 4) {
-        // Warp and apply B&W
-        final processedBytes = TestOpenCv.processAndWarp(mat, detectedCorners);
+      if (finalCorners != null && finalCorners.length == 4) {
+        // Warp and apply Magic Color
+        final processedBytes = TestOpenCv.processAndWarp(mat, finalCorners);
 
         if (processedBytes != null) {
           // Save processed image
@@ -175,16 +232,24 @@ class CustomCameraController extends GetxController {
           capturedImages.add(path);
 
           mat.dispose();
+
+          // End saving animation after processing
+          isSavingDoc = false;
+          update();
+
           return path;
         }
       }
 
-      // Fallback: if detection fails, save the original (or handle as error)
+      // Fallback: if detection fails, save the original
       capturedImages.add(image.path);
       mat.dispose();
+      isSavingDoc = false;
       return image.path;
     } catch (e) {
       Logger().e('Capture error: $e');
+      isFlashing = false;
+      isSavingDoc = false;
       return null;
     } finally {
       isCapturing = false;

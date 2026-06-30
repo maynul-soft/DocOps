@@ -90,6 +90,7 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
                 //TODO: implement with this logic
 
                 // controller.capturedImages.isEmpty
+
               },
               child: Column(
                 children: [
@@ -187,6 +188,30 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
       child: Stack(
         children: [
           Positioned.fill(child: CameraPreview(cam)),
+          // Flash Effect
+          if (controller.isFlashing)
+            Positioned.fill(
+              child: Container(
+                color: Colors.white,
+              ),
+            ),
+          // Document Saving Animation
+          if (controller.isSavingDoc)
+            Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(color: Colors.white),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Enhancing...',
+                    style: CustomTextTheme.fontSize14(context).copyWith(
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           if (controller.corners != null && controller.imageSize != null)
             Positioned.fill(
               child: CustomPaint(
@@ -204,11 +229,27 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
                     onTap: () {
                       Get.toNamed(CapturedDocListView.name);
                     },
-                    child: Image.file(
-                      height: 50,
-                      width: 50,
-                      fit: BoxFit.fill,
-                      File(controller.capturedImages.first),
+                    child: TweenAnimationBuilder<double>(
+                      duration: const Duration(milliseconds: 500),
+                      tween: Tween(begin: 0.0, end: 1.0),
+                      builder: (context, value, child) {
+                        return Transform.translate(
+                          offset: Offset(0, (1 - value) * -100),
+                          child: Transform.scale(
+                            scale: 0.5 + (0.5 * value),
+                            child: Opacity(
+                              opacity: value,
+                              child: child,
+                            ),
+                          ),
+                        );
+                      },
+                      child: Image.file(
+                        height: 50,
+                        width: 50,
+                        fit: BoxFit.fill,
+                        File(controller.capturedImages.last), // Use last captured
+                      ),
                     ),
                   ),
                 )
