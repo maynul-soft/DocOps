@@ -26,6 +26,8 @@ class CustomCameraController extends GetxController {
   CameraScanMode scanMode = CameraScanMode.document;
   int idCardStep = 1; // 1 = Front, 2 = Back
   String? idCardFrontPath;
+  bool isLockedMode = false;
+  VoidCallback? onLockedScanComplete;
 
   void setScanMode(CameraScanMode mode) {
     scanMode = mode;
@@ -317,6 +319,36 @@ class CustomCameraController extends GetxController {
         finalCorners ??= TestOpenCv.processDocuments(mat);
       }
 
+      // If in ID Card or Passport mode and no corners were reliably detected,
+      // fallback to the exact landscape frame matching the on-screen guide
+      if (finalCorners == null || finalCorners.length != 4) {
+        if (scanMode == CameraScanMode.idCard) {
+          // Standard ID-1 1.586 : 1 landscape card box
+          final cropW = (mat.width * 0.90).toInt();
+          final cropH = (cropW / 1.586).toInt();
+          final cropX = ((mat.width - cropW) / 2).toInt();
+          final cropY = ((mat.height - cropH) / 2).toInt();
+          finalCorners = [
+            cv.Point(cropX, cropY),
+            cv.Point(cropX + cropW, cropY),
+            cv.Point(cropX + cropW, cropY + cropH),
+            cv.Point(cropX, cropY + cropH),
+          ];
+        } else if (scanMode == CameraScanMode.passport) {
+          // Standard ID-3 1.42 : 1 landscape passport box
+          final cropW = (mat.width * 0.92).toInt();
+          final cropH = (cropW / 1.42).toInt();
+          final cropX = ((mat.width - cropW) / 2).toInt();
+          final cropY = ((mat.height - cropH) / 2).toInt();
+          finalCorners = [
+            cv.Point(cropX, cropY),
+            cv.Point(cropX + cropW, cropY),
+            cv.Point(cropX + cropW, cropY + cropH),
+            cv.Point(cropX, cropY + cropH),
+          ];
+        }
+      }
+
       String resultPath = image.path;
       if (finalCorners != null && finalCorners.length == 4) {
         // Warp and apply Magic Color
@@ -361,8 +393,14 @@ class CustomCameraController extends GetxController {
           idCardFrontPath = null;
           isSavingDoc = false;
 
-          if (stitched != null) {
-            capturedImages.add(stitched);
+          final finalPath = stitched ?? resultPath;
+          capturedImages.add(finalPath);
+          update();
+
+          if (isLockedMode) {
+            // Auto complete and navigate to review
+            onLockedScanComplete?.call();
+          } else {
             Get.snackbar(
               'ID Card Compiled',
               'Front and Back combined onto a single page!',
@@ -370,16 +408,22 @@ class CustomCameraController extends GetxController {
               backgroundColor: const Color(0xFF10B981),
               colorText: Colors.white,
             );
-            update();
-            return stitched;
-          } else {
-            capturedImages.add(resultPath);
-            update();
-            return resultPath;
           }
+          return finalPath;
         }
+      } else if (scanMode == CameraScanMode.passport) {
+        // Passport mode: single page capture
+        capturedImages.add(resultPath);
+        isSavingDoc = false;
+        update();
+
+        if (isLockedMode) {
+          // Auto complete and navigate to review
+          onLockedScanComplete?.call();
+        }
+        return resultPath;
       } else {
-        // Document & Passport modes: add single page
+        // Standard document mode
         capturedImages.add(resultPath);
         isSavingDoc = false;
         update();

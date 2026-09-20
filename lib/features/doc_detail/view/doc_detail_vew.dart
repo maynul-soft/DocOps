@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/services.dart';
 import 'package:doc_scanner/core/export_path/export_path.dart';
 import 'package:doc_scanner/core/services/document_storage/document_storage_service.dart';
 import 'package:doc_scanner/core/services/pdf/pdf_service.dart';
@@ -170,6 +171,31 @@ class _DocDetailVewState extends State<DocDetailVew> {
     );
   }
 
+  void _onReorderPage(int fromIndex, int toIndex) async {
+    if (_document == null || fromIndex == toIndex) return;
+    HapticFeedback.selectionClick();
+    setState(() {
+      final movedPath = _document!.imagePaths.removeAt(fromIndex);
+      _document!.imagePaths.insert(toIndex, movedPath);
+    });
+
+    await DocumentStorageService.reorderPages(_document!.id, _document!.imagePaths);
+    if (Get.isRegistered<HomeController>()) {
+      Get.find<HomeController>().loadDocuments();
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Reordered: Page ${fromIndex + 1} ➔ Page ${toIndex + 1}'),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFF1E293B),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final doc = _document;
@@ -202,27 +228,105 @@ class _DocDetailVewState extends State<DocDetailVew> {
           const SizedBox(width: 8),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: GridView.builder(
-          itemCount: doc.imagePaths.length + 1,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            crossAxisSpacing: 12,
-            childAspectRatio: 0.70,
-            mainAxisSpacing: 12,
+      body: Column(
+        children: [
+          if (doc.imagePaths.length > 1)
+            Container(
+              margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEFF6FF),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFBFDBFE)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.touch_app_outlined, size: 16, color: Color(0xFF2563EB)),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Long-press & drag any page to reorder / swap positions',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF1E40AF),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: GridView.builder(
+                itemCount: doc.imagePaths.length + 1,
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 12,
+                  childAspectRatio: 0.70,
+                  mainAxisSpacing: 12,
+                ),
+                itemBuilder: (BuildContext context, int index) {
+                  return index < doc.imagePaths.length
+                      ? _buildReorderablePageCard(doc.imagePaths[index], index)
+                      : buildAddNewPageCard();
+                },
+              ),
+            ),
           ),
-          itemBuilder: (BuildContext context, int index) {
-            return index < doc.imagePaths.length
-                ? buildDocImageCard(doc.imagePaths[index], index)
-                : buildAddNewPageCard();
-          },
-        ),
+        ],
       ),
     );
   }
 
-  Widget buildDocImageCard(String imagePath, int index) {
+  Widget _buildReorderablePageCard(String imagePath, int index) {
+    return DragTarget<int>(
+      onWillAcceptWithDetails: (details) => details.data != index,
+      onAcceptWithDetails: (details) {
+        _onReorderPage(details.data, index);
+      },
+      builder: (context, candidateData, rejectedData) {
+        final isTarget = candidateData.isNotEmpty;
+        return LongPressDraggable<int>(
+          data: index,
+          delay: const Duration(milliseconds: 400),
+          onDragStarted: () {
+            HapticFeedback.mediumImpact();
+          },
+          feedback: Material(
+            elevation: 12,
+            borderRadius: BorderRadius.circular(16),
+            shadowColor: Colors.black54,
+            child: SizedBox(
+              width: 150,
+              height: 215,
+              child: Opacity(
+                opacity: 0.9,
+                child: buildDocImageCard(imagePath, index, isDragging: true),
+              ),
+            ),
+          ),
+          childWhenDragging: Opacity(
+            opacity: 0.25,
+            child: buildDocImageCard(imagePath, index),
+          ),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: isTarget
+                  ? Border.all(color: const Color(0xFF2563EB), width: 3)
+                  : null,
+            ),
+            child: buildDocImageCard(imagePath, index),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget buildDocImageCard(String imagePath, int index, {bool isDragging = false}) {
     return GestureDetector(
       onTap: () async {
         await Navigator.pushNamed(
@@ -277,22 +381,23 @@ class _DocDetailVewState extends State<DocDetailVew> {
                   ),
                 ),
               ),
-              // Delete icon button
-              Positioned(
-                top: 8,
-                right: 8,
-                child: GestureDetector(
-                  onTap: () => _onTapDeletePage(index),
-                  child: Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.6),
-                      shape: BoxShape.circle,
+              // Delete icon button (hidden while dragging feedback)
+              if (!isDragging)
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: GestureDetector(
+                    onTap: () => _onTapDeletePage(index),
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.6),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.delete_outline, color: Colors.white, size: 16),
                     ),
-                    child: const Icon(Icons.delete_outline, color: Colors.white, size: 16),
                   ),
                 ),
-              ),
             ],
           ),
         ),

@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:doc_scanner/core/export_path/export_path.dart';
 import 'package:doc_scanner/core/services/pdf/pdf_service.dart';
 import 'package:doc_scanner/core/widgets/password_prompt_dialog.dart';
+import 'package:doc_scanner/features/custom_camera_view/widget/scan_guide_overlay.dart';
 import 'package:doc_scanner/features/home/controller/home_controller.dart';
 import 'package:doc_scanner/features/home/model/document_model.dart';
 import 'package:intl/intl.dart';
@@ -382,23 +383,67 @@ class _HomeViewState extends State<HomeView> {
     );
   }
 
-  Row buildToolSection() {
-    return Row(
+  Widget buildToolSection() {
+    return Column(
       children: [
-        buildToolsCard(
-          title: 'Import\nImages',
-          subtitle: 'from gallery',
-          icon: Icons.image,
-          color: const Color(0xFF2563EB),
-          onTap: () => homeController.importFromGallery(),
+        Row(
+          children: [
+            buildToolsCard(
+              title: 'ID Card',
+              subtitle: '2-sided card',
+              icon: Icons.badge_outlined,
+              color: const Color(0xFF4F46E5),
+              onTap: () async {
+                await Navigator.pushNamed(
+                  context,
+                  CustomCameraScreen.name,
+                  arguments: {
+                    'mode': CameraScanMode.idCard,
+                    'isLocked': true,
+                  },
+                );
+                homeController.loadDocuments();
+              },
+            ),
+            const SizedBox(width: 12),
+            buildToolsCard(
+              title: 'Passport',
+              subtitle: 'photo & MRZ',
+              icon: Icons.menu_book_outlined,
+              color: const Color(0xFF059669),
+              onTap: () async {
+                await Navigator.pushNamed(
+                  context,
+                  CustomCameraScreen.name,
+                  arguments: {
+                    'mode': CameraScanMode.passport,
+                    'isLocked': true,
+                  },
+                );
+                homeController.loadDocuments();
+              },
+            ),
+          ],
         ),
-        const SizedBox(width: 16),
-        buildToolsCard(
-          title: 'Import\nFiles',
-          subtitle: 'from storage',
-          icon: Icons.folder_open,
-          color: const Color(0xFFA06900),
-          onTap: () => homeController.importFromGallery(),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            buildToolsCard(
+              title: 'Import Images',
+              subtitle: 'from gallery',
+              icon: Icons.image_outlined,
+              color: const Color(0xFF2563EB),
+              onTap: () => homeController.importFromGallery(),
+            ),
+            const SizedBox(width: 12),
+            buildToolsCard(
+              title: 'Import Files',
+              subtitle: 'from storage',
+              icon: Icons.folder_open_outlined,
+              color: const Color(0xFFA06900),
+              onTap: () => homeController.importFromGallery(),
+            ),
+          ],
         ),
       ],
     );
@@ -414,45 +459,58 @@ class _HomeViewState extends State<HomeView> {
     return Expanded(
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(14),
             color: Colors.white,
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.03),
-                blurRadius: 8,
-                offset: const Offset(0, 3),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
               ),
             ],
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
                   color: color.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(icon, color: color, size: 24),
+                child: Icon(icon, color: color, size: 20),
               ),
-              const SizedBox(height: 10),
-              Text(
-                title,
-                style: CustomTextTheme.fontSize16(context).copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: const Color(0xFF0F172A),
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                subtitle,
-                style: CustomTextTheme.fontSize10(context).copyWith(
-                  fontFamily: 'Manrope',
-                  color: const Color(0xFF64748B),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF0F172A),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontFamily: 'Manrope',
+                        fontSize: 10,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],

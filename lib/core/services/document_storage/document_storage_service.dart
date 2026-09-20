@@ -187,4 +187,20 @@ class DocumentStorageService {
     final box = await _getBox();
     await box.put(id, doc.toJson());
   }
+
+  /// Reorder pages of a document and persist updated imagePaths
+  static Future<DocumentModel?> reorderPages(String id, List<String> newOrderedPaths) async {
+    final doc = await getDocument(id);
+    if (doc == null) return null;
+
+    doc.imagePaths.clear();
+    doc.imagePaths.addAll(newOrderedPaths);
+    doc.updatedAt = DateTime.now();
+
+    final box = await _getBox();
+    await box.put(id, doc.toJson());
+    Logger().i('Reordered pages for doc $id. Total pages: ${doc.imagePaths.length}');
+    return doc;
+  }
 }
+

@@ -17,10 +17,42 @@ class CustomCameraScreen extends StatefulWidget {
 }
 
 class _CustomCameraScreenState extends State<CustomCameraScreen> {
+  bool _initializedArgs = false;
+  String? _targetDocId;
+
   @override
   void initState() {
     super.initState();
     Get.put(CustomCameraController(), permanent: false);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_initializedArgs) {
+      _initializedArgs = true;
+      final args = ModalRoute.of(context)?.settings.arguments;
+      final controller = Get.find<CustomCameraController>();
+      controller.onLockedScanComplete = () {
+        if (mounted) {
+          _openReviewScreen(controller);
+        }
+      };
+
+      if (args is Map) {
+        if (args.containsKey('targetDocId')) {
+          _targetDocId = args['targetDocId'] as String?;
+        }
+        if (args.containsKey('mode')) {
+          controller.setScanMode(args['mode'] as CameraScanMode);
+        }
+        if (args['isLocked'] == true) {
+          controller.isLockedMode = true;
+        }
+      } else if (args is String) {
+        _targetDocId = args;
+      }
+    }
   }
 
   @override
@@ -47,7 +79,7 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
 
   void _openReviewScreen(CustomCameraController controller) {
     if (controller.capturedImages.isEmpty) return;
-    final docId = widget.targetDocId ?? (ModalRoute.of(context)?.settings.arguments as String?);
+    final docId = widget.targetDocId ?? _targetDocId;
     Navigator.pushNamed(
       context,
       CapturedDocListView.name,
@@ -230,6 +262,42 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
   }
 
   Widget buildModeSelector(CustomCameraController controller) {
+    if (controller.isLockedMode) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white24),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              controller.scanMode == CameraScanMode.idCard
+                  ? Icons.badge_outlined
+                  : Icons.menu_book_outlined,
+              size: 16,
+              color: Colors.white,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              controller.scanMode == CameraScanMode.idCard
+                  ? (controller.idCardStep == 1
+                      ? '🪪 ID Card: Step 1 (Front)'
+                      : '🪪 ID Card: Step 2 (Back)')
+                  : '📖 Passport Scan Mode',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [

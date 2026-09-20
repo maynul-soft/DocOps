@@ -1,9 +1,11 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:doc_scanner/core/export_path/export_path.dart';
 import 'package:doc_scanner/features/edit_doc/controller/edit_doc_controller.dart';
 import 'package:doc_scanner/features/edit_doc/model/draw_model.dart';
 import 'package:doc_scanner/features/edit_doc/widget/signature_dialog.dart';
+import 'package:doc_scanner/features/edit_doc/widget/watermark_dialog.dart';
 import 'package:opencv_dart/opencv_dart.dart' as cv;
 
 class PlacedSignature {
@@ -38,6 +40,9 @@ class _EditDocViewState extends State<EditDocView> {
   // Digital Signatures
   List<PlacedSignature> placedSignatures = [];
   String? selectedSignatureId;
+
+  // Custom Watermark
+  WatermarkConfig? activeWatermark;
 
   // Crop State
   List<Offset> cropPoints = []; // 4 points: TL, TR, BR, BL in screen coordinates
@@ -225,6 +230,25 @@ class _EditDocViewState extends State<EditDocView> {
     }
   }
 
+  void _openWatermarkDialog(EditDocController controller) async {
+    if (controller.isCropping) controller.toggleCropMode();
+    if (controller.isDrawing) controller.onTapToDraw();
+
+    final result = await WatermarkDialog.show(
+      context,
+      initialConfig: activeWatermark,
+    );
+    if (result != null && mounted) {
+      setState(() {
+        if (result.isRemoved) {
+          activeWatermark = null;
+        } else {
+          activeWatermark = result.config;
+        }
+      });
+    }
+  }
+
   void _onTapDone(EditDocController controller) async {
     final path = activeImagePath;
     if (path == null) {
@@ -238,8 +262,8 @@ class _EditDocViewState extends State<EditDocView> {
       return;
     }
 
-    // If user drew lines or placed signatures, save high-res composite
-    if ((controller.pointList.isNotEmpty || placedSignatures.isNotEmpty) &&
+    // If user drew lines or placed signatures or set a watermark, save high-res composite
+    if ((controller.pointList.isNotEmpty || placedSignatures.isNotEmpty || activeWatermark != null) &&
         image != null &&
         imageDisplayRect != null) {
       final success = await _saveHighResEditedDocument(
@@ -250,6 +274,7 @@ class _EditDocViewState extends State<EditDocView> {
         controller.pointList.clear();
         controller.reDoPoints.clear();
         placedSignatures.clear();
+        activeWatermark = null;
         Get.back(result: true);
         return;
       }
@@ -317,6 +342,16 @@ class _EditDocViewState extends State<EditDocView> {
         );
       }
 
+      // Draw watermark scaled to high-res
+      if (activeWatermark != null) {
+        _paintWatermarkToCanvas(
+          canvas: canvas,
+          size: Size(origW, origH),
+          config: activeWatermark!,
+          scale: scaleX,
+        );
+      }
+
       final picture = recorder.endRecording();
       final compositeImage = await picture.toImage(baseImage.width, baseImage.height);
       final byteData = await compositeImage.toByteData(format: ui.ImageByteFormat.png);
@@ -326,8 +361,64 @@ class _EditDocViewState extends State<EditDocView> {
       await file.writeAsBytes(byteData.buffer.asUint8List());
       return true;
     } catch (e) {
-      Logger().e('Error saving high-res document with signature: $e');
+      Logger().e('Error saving high-res document: $e');
       return false;
+    }
+  }
+
+  static void _paintWatermarkToCanvas({
+    required Canvas canvas,
+    required Size size,
+    required WatermarkConfig config,
+    required double scale,
+  }) {
+    final style = TextStyle(
+      color: config.color.withValues(alpha: config.opacity),
+      fontSize: config.fontSize * scale,
+      fontWeight: FontWeight.bold,
+      letterSpacing: 3.0 * scale,
+    );
+
+    final textSpan = TextSpan(text: config.text, style: style);
+    final textPainter = TextPainter(
+      text: textSpan,
+      textDirection: TextDirection.ltr,
+    );
+    textPainter.layout();
+
+    final rad = config.angle * (math.pi / 180.0);
+
+    if (config.isRepeated) {
+      final stepX = (textPainter.width + 60.0 * scale).clamp(120.0 * scale, double.infinity);
+      final stepY = (textPainter.height + 70.0 * scale).clamp(80.0 * scale, double.infinity);
+
+      final cols = (size.width / stepX).ceil() + 2;
+      final rows = (size.height / stepY).ceil() + 2;
+
+      for (int r = -1; r < rows; r++) {
+        for (int c = -1; c < cols; c++) {
+          final cx = c * stepX + (r % 2 == 0 ? 0.0 : stepX / 2);
+          final cy = r * stepY;
+
+          canvas.save();
+          canvas.translate(cx, cy);
+          canvas.rotate(rad);
+          textPainter.paint(
+            canvas,
+            Offset(-textPainter.width / 2, -textPainter.height / 2),
+          );
+          canvas.restore();
+        }
+      }
+    } else {
+      canvas.save();
+      canvas.translate(size.width / 2, size.height / 2);
+      canvas.rotate(rad);
+      textPainter.paint(
+        canvas,
+        Offset(-textPainter.width / 2, -textPainter.height / 2),
+      );
+      canvas.restore();
     }
   }
 
@@ -411,98 +502,197 @@ class _EditDocViewState extends State<EditDocView> {
                             ),
                           ),
                         ),
+                        // Custom Watermark Live Preview
+                        if (activeWatermark != null && imageDisplayRect != null)
+                          Positioned.fromRect(
+                            rect: imageDisplayRect!,
+                            child: IgnorePointer(
+                              child: CustomPaint(
+                                painter: _WatermarkOverlayPainter(config: activeWatermark!),
+                              ),
+                            ),
+                          ),
                         // Interactive Digital Signature Overlays
                         ...placedSignatures.map((sig) {
                           final isSelected = selectedSignatureId == sig.id;
+                          const pad = 24.0;
                           return Positioned(
-                            left: sig.position.dx,
-                            top: sig.position.dy,
-                            width: sig.size.width,
-                            height: sig.size.height,
-                            child: GestureDetector(
-                              onTap: () {
-                                setState(() {
-                                  selectedSignatureId = sig.id;
-                                });
-                              },
-                              onPanUpdate: (details) {
-                                setState(() {
-                                  selectedSignatureId = sig.id;
-                                  sig.position += details.delta;
-                                });
-                              },
-                              child: Stack(
-                                clipBehavior: Clip.none,
-                                children: [
-                                  // Signature image & selection border
-                                  Container(
-                                    width: sig.size.width,
-                                    height: sig.size.height,
-                                    decoration: BoxDecoration(
-                                      border: isSelected
-                                          ? Border.all(color: const Color(0xFF3B82F6), width: 1.5)
-                                          : null,
-                                      color: isSelected
-                                          ? const Color(0xFF3B82F6).withValues(alpha: 0.08)
-                                          : null,
-                                    ),
-                                    child: RawImage(
-                                      image: sig.image,
-                                      fit: BoxFit.contain,
+                            left: sig.position.dx - pad,
+                            top: sig.position.dy - pad,
+                            width: sig.size.width + pad * 2,
+                            height: sig.size.height + pad * 2,
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                // Center signature container
+                                Positioned(
+                                  left: pad,
+                                  top: pad,
+                                  width: sig.size.width,
+                                  height: sig.size.height,
+                                  child: GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: () {
+                                      setState(() {
+                                        selectedSignatureId = sig.id;
+                                      });
+                                    },
+                                    onPanUpdate: (details) {
+                                      setState(() {
+                                        selectedSignatureId = sig.id;
+                                        sig.position += details.delta;
+                                      });
+                                    },
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        border: isSelected
+                                            ? Border.all(color: const Color(0xFF3B82F6), width: 1.5)
+                                            : null,
+                                        color: isSelected
+                                            ? const Color(0xFF3B82F6).withValues(alpha: 0.08)
+                                            : null,
+                                      ),
+                                      child: RawImage(
+                                        image: sig.image,
+                                        fit: BoxFit.contain,
+                                      ),
                                     ),
                                   ),
-                                  // Delete button (top-right)
-                                  if (isSelected)
-                                    Positioned(
-                                      top: -12,
-                                      right: -12,
-                                      child: GestureDetector(
-                                        onTap: () {
-                                          setState(() {
-                                            placedSignatures.remove(sig);
-                                            if (selectedSignatureId == sig.id) {
-                                              selectedSignatureId = null;
-                                            }
-                                          });
-                                        },
-                                        child: Container(
-                                          padding: const EdgeInsets.all(4),
-                                          decoration: const BoxDecoration(
-                                            color: Colors.red,
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: const Icon(Icons.close, color: Colors.white, size: 14),
+                                ),
+                                // Delete button (top-right, fully inside Positioned hit bounds)
+                                if (isSelected)
+                                  Positioned(
+                                    top: 4,
+                                    right: 4,
+                                    child: GestureDetector(
+                                      behavior: HitTestBehavior.opaque,
+                                      onTap: () {
+                                        setState(() {
+                                          placedSignatures.remove(sig);
+                                          if (selectedSignatureId == sig.id) {
+                                            selectedSignatureId = null;
+                                          }
+                                        });
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.all(6),
+                                        decoration: const BoxDecoration(
+                                          color: Colors.red,
+                                          shape: BoxShape.circle,
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black38,
+                                              blurRadius: 4,
+                                              offset: Offset(0, 2),
+                                            ),
+                                          ],
                                         ),
+                                        child: const Icon(Icons.close, color: Colors.white, size: 16),
                                       ),
                                     ),
-                                  // Resize handle (bottom-right)
-                                  if (isSelected)
-                                    Positioned(
-                                      bottom: -10,
-                                      right: -10,
-                                      child: GestureDetector(
-                                        onPanUpdate: (details) {
-                                          setState(() {
-                                            final newW = (sig.size.width + details.delta.dx).clamp(60.0, 350.0);
-                                            final aspect = sig.image.width / sig.image.height;
-                                            sig.size = Size(newW, newW / aspect);
-                                          });
-                                        },
-                                        child: Container(
-                                          padding: const EdgeInsets.all(4),
-                                          decoration: const BoxDecoration(
-                                            color: Color(0xFF2563EB),
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: const Icon(Icons.aspect_ratio, color: Colors.white, size: 14),
+                                  ),
+                                // Resize handle (bottom-right, fully inside Positioned hit bounds)
+                                if (isSelected)
+                                  Positioned(
+                                    bottom: 4,
+                                    right: 4,
+                                    child: GestureDetector(
+                                      behavior: HitTestBehavior.opaque,
+                                      onPanUpdate: (details) {
+                                        setState(() {
+                                          final newW = (sig.size.width + details.delta.dx).clamp(60.0, 350.0);
+                                          final aspect = sig.image.width / sig.image.height;
+                                          sig.size = Size(newW, newW / aspect);
+                                        });
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.all(6),
+                                        decoration: const BoxDecoration(
+                                          color: Color(0xFF2563EB),
+                                          shape: BoxShape.circle,
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black38,
+                                              blurRadius: 4,
+                                              offset: Offset(0, 2),
+                                            ),
+                                          ],
                                         ),
+                                        child: const Icon(Icons.aspect_ratio, color: Colors.white, size: 16),
                                       ),
                                     ),
-                                ],
-                              ),
+                                  ),
+                              ],
                             ),
                           );
                         }),
+                        // Floating quick-delete bar when a signature is selected
+                        if (selectedSignatureId != null)
+                          Positioned(
+                            bottom: 12,
+                            left: 0,
+                            right: 0,
+                            child: Center(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF1E293B),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(color: Colors.white24),
+                                  boxShadow: const [
+                                    BoxShadow(
+                                      color: Colors.black45,
+                                      blurRadius: 8,
+                                      offset: Offset(0, 3),
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    GestureDetector(
+                                      behavior: HitTestBehavior.opaque,
+                                      onTap: () {
+                                        setState(() {
+                                          placedSignatures.removeWhere((s) => s.id == selectedSignatureId);
+                                          selectedSignatureId = null;
+                                        });
+                                      },
+                                      child: const Row(
+                                        children: [
+                                          Icon(Icons.delete_outline, color: Colors.redAccent, size: 18),
+                                          SizedBox(width: 6),
+                                          Text(
+                                            'Delete Signature',
+                                            style: TextStyle(
+                                              color: Colors.redAccent,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 14),
+                                    Container(width: 1, height: 16, color: Colors.white24),
+                                    const SizedBox(width: 14),
+                                    GestureDetector(
+                                      behavior: HitTestBehavior.opaque,
+                                      onTap: () {
+                                        setState(() {
+                                          selectedSignatureId = null;
+                                        });
+                                      },
+                                      child: const Text(
+                                        'Done',
+                                        style: TextStyle(color: Colors.white70, fontSize: 13),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
                         if (isProcessingCrop)
                           Container(
                             color: Colors.black.withValues(alpha: 0.5),
@@ -691,6 +881,12 @@ class _EditDocViewState extends State<EditDocView> {
           color: placedSignatures.isNotEmpty ? Colors.blue : Colors.white,
         ),
         buildCustomButton(
+          icon: Icons.branding_watermark_outlined,
+          onTap: () => _openWatermarkDialog(editDocController),
+          title: 'Watermark',
+          color: activeWatermark != null ? Colors.blue : Colors.white,
+        ),
+        buildCustomButton(
           icon: Icons.rotate_right,
           onTap: () => _onTapRotate(editDocController),
           title: 'Rotate',
@@ -709,16 +905,16 @@ class _EditDocViewState extends State<EditDocView> {
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, color: color ?? Colors.white, size: 24),
+              Icon(icon, color: color ?? Colors.white, size: 22),
               const SizedBox(height: 4),
               Text(
                 title,
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: 11,
                   fontWeight: FontWeight.bold,
                   color: color ?? Colors.white,
                 ),
@@ -766,13 +962,21 @@ class _EditDocViewState extends State<EditDocView> {
               ),
               const Spacer(),
               GestureDetector(
+                behavior: HitTestBehavior.opaque,
                 onTap: () => Navigator.pop(context),
-                child: const Icon(Icons.close, color: Colors.white70),
+                child: const Padding(
+                  padding: EdgeInsets.all(8),
+                  child: Icon(Icons.close, color: Colors.white70),
+                ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 8),
               GestureDetector(
+                behavior: HitTestBehavior.opaque,
                 onTap: () => _onTapDone(editDocController),
-                child: const Icon(Icons.done, color: Color(0xFF60A5FA), size: 28),
+                child: const Padding(
+                  padding: EdgeInsets.all(8),
+                  child: Icon(Icons.done, color: Color(0xFF60A5FA), size: 28),
+                ),
               ),
             ],
           );
@@ -885,4 +1089,25 @@ class DrawCustomLine extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
+class _WatermarkOverlayPainter extends CustomPainter {
+  final WatermarkConfig config;
+
+  _WatermarkOverlayPainter({required this.config});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    _EditDocViewState._paintWatermarkToCanvas(
+      canvas: canvas,
+      size: size,
+      config: config,
+      scale: 1.0,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _WatermarkOverlayPainter oldDelegate) {
+    return oldDelegate.config != config;
+  }
 }
