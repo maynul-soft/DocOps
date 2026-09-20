@@ -37,9 +37,22 @@ class _EditDocViewState extends State<EditDocView> {
   @override
   void initState() {
     super.initState();
+    _currentPath = widget.imagePath;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       loadImage();
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_currentPath == null) {
+      final args = ModalRoute.of(context)?.settings.arguments;
+      if (args is String) {
+        _currentPath = args;
+        loadImage();
+      }
+    }
   }
 
   @override

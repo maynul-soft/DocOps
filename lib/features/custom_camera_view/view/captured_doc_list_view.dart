@@ -41,6 +41,21 @@ class _CapturedDocListViewState extends State<CapturedDocListView> {
     super.dispose();
   }
 
+  Future<void> _openEditPage(int index) async {
+    final controller = Get.find<CustomCameraController>();
+    if (index < 0 || index >= controller.capturedImages.length) return;
+
+    final path = controller.capturedImages[index];
+    await Navigator.pushNamed(
+      context,
+      EditDocView.name,
+      arguments: path,
+    );
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   void _onTapSaveDocument(CustomCameraController controller) {
     if (controller.capturedImages.isEmpty) {
       Get.snackbar('Error', 'No pages captured');
@@ -128,17 +143,28 @@ class _CapturedDocListViewState extends State<CapturedDocListView> {
         ),
         actions: [
           GetBuilder<CustomCameraController>(
-            builder: (controller) => TextButton.icon(
-              onPressed: () => _onTapSaveDocument(controller),
-              icon: const Icon(Icons.check_circle, color: Color(0xFF60A5FA), size: 20),
-              label: const Text(
-                'Save',
-                style: TextStyle(
-                  color: Color(0xFF60A5FA),
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
+            builder: (controller) => Row(
+              children: [
+                if (controller.capturedImages.isNotEmpty &&
+                    controller.currentCapturedPage < controller.capturedImages.length)
+                  IconButton(
+                    tooltip: 'Edit Current Page',
+                    icon: const Icon(Icons.edit, color: Colors.white),
+                    onPressed: () => _openEditPage(controller.currentCapturedPage),
+                  ),
+                TextButton.icon(
+                  onPressed: () => _onTapSaveDocument(controller),
+                  icon: const Icon(Icons.check_circle, color: Color(0xFF60A5FA), size: 20),
+                  label: const Text(
+                    'Save',
+                    style: TextStyle(
+                      color: Color(0xFF60A5FA),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
         ],
@@ -149,10 +175,10 @@ class _CapturedDocListViewState extends State<CapturedDocListView> {
             return Column(
               mainAxisAlignment: MainAxisAlignment.start,
               children: [
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 if (controller.currentCapturedPage < controller.capturedImages.length)
                   Container(
-                    padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 10),
+                    padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(20),
                       color: Colors.white.withValues(alpha: 0.15),
@@ -171,7 +197,7 @@ class _CapturedDocListViewState extends State<CapturedDocListView> {
                       ],
                     ),
                   ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 Expanded(
                   child: PageView.builder(
                     controller: _pageController,
@@ -184,22 +210,17 @@ class _CapturedDocListViewState extends State<CapturedDocListView> {
                           ? Container(
                               margin: EdgeInsets.symmetric(
                                 horizontal: 10,
-                                vertical: controller.currentCapturedPage == index ? 10 : 30,
+                                vertical: controller.currentCapturedPage == index ? 8 : 26,
                               ),
                               child: Stack(
                                 children: [
+                                  // Whole Card is fully clickable to Edit
                                   Positioned.fill(
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(16),
-                                      child: GestureDetector(
-                                        onTap: () async {
-                                          await Get.to(
-                                            () => EditDocView(
-                                              imagePath: controller.capturedImages[index],
-                                            ),
-                                          );
-                                          setState(() {});
-                                        },
+                                    child: GestureDetector(
+                                      behavior: HitTestBehavior.opaque,
+                                      onTap: () => _openEditPage(index),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(16),
                                         child: Image.file(
                                           File(controller.capturedImages[index]),
                                           fit: BoxFit.contain,
@@ -207,7 +228,7 @@ class _CapturedDocListViewState extends State<CapturedDocListView> {
                                       ),
                                     ),
                                   ),
-                                  // Delete button
+                                  // Delete button (top right)
                                   Positioned(
                                     top: 12,
                                     right: 12,
@@ -217,34 +238,49 @@ class _CapturedDocListViewState extends State<CapturedDocListView> {
                                         padding: const EdgeInsets.all(8),
                                         decoration: BoxDecoration(
                                           shape: BoxShape.circle,
-                                          color: Colors.black.withValues(alpha: 0.6),
+                                          color: Colors.black.withValues(alpha: 0.65),
                                         ),
                                         child: const Icon(Icons.delete_outline, color: Colors.white, size: 20),
                                       ),
                                     ),
                                   ),
-                                  // Tap to edit hint
+                                  // Prominent, explicitly clickable Edit Badge (bottom center)
                                   Positioned(
-                                    bottom: 12,
+                                    bottom: 14,
                                     left: 0,
                                     right: 0,
                                     child: Center(
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                        decoration: BoxDecoration(
-                                          color: Colors.black.withValues(alpha: 0.6),
-                                          borderRadius: BorderRadius.circular(20),
-                                        ),
-                                        child: const Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(Icons.edit, size: 14, color: Colors.white70),
-                                            SizedBox(width: 6),
-                                            Text(
-                                              'Tap to Edit & Crop',
-                                              style: TextStyle(color: Colors.white, fontSize: 12),
-                                            ),
-                                          ],
+                                      child: GestureDetector(
+                                        behavior: HitTestBehavior.opaque,
+                                        onTap: () => _openEditPage(index),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFF2563EB),
+                                            borderRadius: BorderRadius.circular(24),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: Colors.black.withValues(alpha: 0.4),
+                                                blurRadius: 8,
+                                                offset: const Offset(0, 3),
+                                              ),
+                                            ],
+                                          ),
+                                          child: const Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(Icons.edit, size: 16, color: Colors.white),
+                                              SizedBox(width: 8),
+                                              Text(
+                                                'Tap to Edit & Crop',
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -256,36 +292,57 @@ class _CapturedDocListViewState extends State<CapturedDocListView> {
                     },
                   ),
                 ),
-                // Bottom Save Action Bar
+                // Bottom Action Bar
                 Container(
-                  padding: const EdgeInsets.all(20),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                   child: Row(
                     children: [
+                      // Add Page Button
                       Expanded(
                         child: OutlinedButton.icon(
                           style: OutlinedButton.styleFrom(
                             foregroundColor: Colors.white,
                             side: const BorderSide(color: Colors.white38),
-                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
                           onPressed: () => Get.back(),
-                          icon: const Icon(Icons.add_a_photo_outlined),
+                          icon: const Icon(Icons.add_a_photo_outlined, size: 18),
                           label: const Text('Add Page'),
                         ),
                       ),
-                      const SizedBox(width: 14),
+                      const SizedBox(width: 10),
+                      // Edit Page Button
+                      if (controller.capturedImages.isNotEmpty &&
+                          controller.currentCapturedPage < controller.capturedImages.length)
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF60A5FA),
+                              side: const BorderSide(color: Color(0xFF60A5FA)),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            onPressed: () => _openEditPage(controller.currentCapturedPage),
+                            icon: const Icon(Icons.edit, size: 18),
+                            label: const Text('Edit Page'),
+                          ),
+                        ),
+                      if (controller.capturedImages.isNotEmpty &&
+                          controller.currentCapturedPage < controller.capturedImages.length)
+                        const SizedBox(width: 10),
+                      // Save Button
                       Expanded(
                         child: ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF2563EB),
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
                           onPressed: () => _onTapSaveDocument(controller),
-                          icon: const Icon(Icons.done_all),
-                          label: const Text('Done & Save'),
+                          icon: const Icon(Icons.done_all, size: 18),
+                          label: const Text('Save Doc'),
                         ),
                       ),
                     ],
