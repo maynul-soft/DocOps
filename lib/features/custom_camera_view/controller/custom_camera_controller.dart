@@ -3,6 +3,7 @@ import 'package:doc_scanner/features/custom_camera_view/controller/test_open_cv.
 import 'package:doc_scanner/features/custom_camera_view/model/flash_model.dart';
 import 'package:doc_scanner/features/custom_camera_view/model/processed_image_model.dart';
 import 'package:opencv_dart/opencv.dart' as cv;
+import 'package:doc_scanner/core/services/tflite/tflite_service.dart';
 
 class CustomCameraController extends GetxController {
   CameraController? cameraController;
@@ -54,7 +55,11 @@ class CustomCameraController extends GetxController {
 
         final mat = TestOpenCv.convertImageToMat(image);
 
-        List<cv.Point>? points = TestOpenCv.processDocuments(mat);
+        List<cv.Point>? points;
+        if (TfliteService.isLoaded) {
+          points = TfliteService.detectDocument(mat);
+        }
+        points ??= TestOpenCv.processDocuments(mat);
 
         if (points != null && points.length == 4) {
           // Add to buffer for smoothing
@@ -215,7 +220,10 @@ class CustomCameraController extends GetxController {
       // Use smoothed corners if available, else detect in high-res
       List<cv.Point>? finalCorners = corners;
       if (finalCorners == null || finalCorners.length != 4) {
-        finalCorners = TestOpenCv.processDocuments(mat);
+        if (TfliteService.isLoaded) {
+          finalCorners = TfliteService.detectDocument(mat);
+        }
+        finalCorners ??= TestOpenCv.processDocuments(mat);
       }
 
       if (finalCorners != null && finalCorners.length == 4) {
