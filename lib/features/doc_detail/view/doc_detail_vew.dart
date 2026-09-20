@@ -115,15 +115,12 @@ class _DocDetailVewState extends State<DocDetailVew> {
 
   void _onTapAddNewPage() async {
     if (_document == null) return;
-    await Navigator.pushNamed(context, CustomCameraScreen.name);
-    final camController = Get.find<CustomCameraController>();
-    if (camController.capturedImages.isNotEmpty) {
-      for (final newImg in camController.capturedImages) {
-        await DocumentStorageService.addPageToDocument(_document!.id, newImg);
-      }
-      camController.capturedImages.clear();
-      await _refreshDocument();
-    }
+    await Navigator.pushNamed(
+      context,
+      CustomCameraScreen.name,
+      arguments: _document!.id,
+    );
+    await _refreshDocument();
   }
 
   void _onTapDeletePage(int index) async {

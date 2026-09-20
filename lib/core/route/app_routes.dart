@@ -16,9 +16,11 @@ class AppRoutes {
           : null;
       screenWidget = EditDocView(imagePath: args);
     } else if (setting.name == CustomCameraScreen.name) {
-      screenWidget = CustomCameraScreen();
+      final targetDocId = setting.arguments is String ? setting.arguments as String : null;
+      screenWidget = CustomCameraScreen(targetDocId: targetDocId);
     } else if (setting.name == CapturedDocListView.name) {
-      screenWidget = CapturedDocListView();
+      final targetDocId = setting.arguments is String ? setting.arguments as String : null;
+      screenWidget = CapturedDocListView(targetDocId: targetDocId);
     } else if (setting.name == Practice.name) {
       screenWidget = Practice();
     }

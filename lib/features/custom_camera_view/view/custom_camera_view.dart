@@ -6,7 +6,8 @@ import 'package:doc_scanner/features/custom_camera_view/widget/document_corner_p
 import 'package:image_picker/image_picker.dart';
 
 class CustomCameraScreen extends StatefulWidget {
-  const CustomCameraScreen({super.key});
+  final String? targetDocId;
+  const CustomCameraScreen({super.key, this.targetDocId});
 
   static const name = 'Custom camera view';
 
@@ -43,21 +44,38 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
     ChangeFlashMoodButtonModel(icon: Icons.flash_off, flashMode: FlashMode.off),
   ];
 
+  void _openReviewScreen(CustomCameraController controller) {
+    if (controller.capturedImages.isEmpty) return;
+    final docId = widget.targetDocId ?? (ModalRoute.of(context)?.settings.arguments as String?);
+    Navigator.pushNamed(
+      context,
+      CapturedDocListView.name,
+      arguments: docId,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: GetBuilder<CustomCameraController>(
-        builder: (controller) {
-          final cam = controller.cameraController;
-
-          if (cam == null || !cam.value.isInitialized) {
-            return const Center(child: CircularProgressIndicator());
+      body: PopScope(
+        canPop: true,
+        onPopInvokedWithResult: (didPop, _) {
+          if (didPop && Get.isRegistered<CustomCameraController>()) {
+            Get.find<CustomCameraController>().capturedImages.clear();
           }
-          return Container(
-            height: double.maxFinite,
-            width: double.maxFinite,
-            decoration: BoxDecoration(color: Colors.black),
+        },
+        child: GetBuilder<CustomCameraController>(
+          builder: (controller) {
+            final cam = controller.cameraController;
+
+            if (cam == null || !cam.value.isInitialized) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            return Container(
+              height: double.maxFinite,
+              width: double.maxFinite,
+              decoration: const BoxDecoration(color: Colors.black),
             child: Column(
               children: [
                 Gap.height(50),
@@ -71,8 +89,9 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
           );
         },
       ),
-    );
-  }
+    ),
+  );
+}
 
   Padding buildBottomViewSection(
     CustomCameraController controller,
@@ -136,9 +155,9 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
             flex: 1,
             child: buildCustomButton(
               onTap: () {
-                controller.capturedImages.isNotEmpty
-                    ? Get.toNamed(CapturedDocListView.name)
-                    : null;
+                if (controller.capturedImages.isNotEmpty) {
+                  _openReviewScreen(controller);
+                }
               },
               child: Row(
                 mainAxisAlignment: .center,
@@ -266,7 +285,7 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
                   right: 10,
                   child: GestureDetector(
                     onTap: () {
-                      Get.toNamed(CapturedDocListView.name);
+                      _openReviewScreen(controller);
                     },
                     child: TweenAnimationBuilder<double>(
                       duration: const Duration(milliseconds: 500),
@@ -331,7 +350,8 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
         children: [
           buildCustomButton(
             onTap: () {
-              Get.back();
+              controller.capturedImages.clear();
+              Navigator.pop(context);
             },
             child: Icon(Icons.close, size: 30, color: Colors.blue),
           ),

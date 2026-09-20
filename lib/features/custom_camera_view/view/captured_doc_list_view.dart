@@ -5,7 +5,9 @@ import 'package:doc_scanner/features/home/controller/home_controller.dart';
 import 'package:intl/intl.dart';
 
 class CapturedDocListView extends StatefulWidget {
-  const CapturedDocListView({super.key});
+  final String? targetDocId;
+
+  const CapturedDocListView({super.key, this.targetDocId});
 
   static const name = 'doc_list_view';
 
@@ -56,9 +58,27 @@ class _CapturedDocListViewState extends State<CapturedDocListView> {
     }
   }
 
-  void _onTapSaveDocument(CustomCameraController controller) {
+  Future<void> _onTapSaveDocument(CustomCameraController controller) async {
     if (controller.capturedImages.isEmpty) {
       Get.snackbar('Error', 'No pages captured');
+      return;
+    }
+
+    if (widget.targetDocId != null) {
+      // User is adding pages to an existing document
+      for (final imagePath in controller.capturedImages) {
+        await DocumentStorageService.addPageToDocument(widget.targetDocId!, imagePath);
+      }
+
+      if (Get.isRegistered<HomeController>()) {
+        Get.find<HomeController>().loadDocuments();
+      }
+
+      controller.capturedImages.clear();
+
+      if (mounted) {
+        Navigator.popUntil(context, (route) => route.settings.name == DocDetailVew.name);
+      }
       return;
     }
 
@@ -115,9 +135,11 @@ class _CapturedDocListViewState extends State<CapturedDocListView> {
 
               controller.capturedImages.clear();
 
-              // Close preview and camera, open detail view
-              Get.until((route) => route.isFirst);
-              Get.toNamed(DocDetailVew.name, arguments: doc);
+              // Close preview and camera, reset backstack to Home and push detail view
+              if (mounted) {
+                Navigator.pushNamedAndRemoveUntil(context, HomeView.name, (route) => false);
+                Navigator.pushNamed(context, DocDetailVew.name, arguments: doc);
+              }
             },
             child: const Text('Save'),
           ),

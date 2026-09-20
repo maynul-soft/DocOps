@@ -13,7 +13,7 @@ class _SplashViewState extends State<SplashView> {
   Future<void> goToNextScreen() async {
     await Future.delayed(Duration(seconds: 2));
     if (!mounted) return;
-    Navigator.pushNamed(context, HomeView.name);
+    Navigator.pushNamedAndRemoveUntil(context, HomeView.name, (route) => false);
     // Navigator.pushNamed(context, TestFromImageView.name);
   }
 
