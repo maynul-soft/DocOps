@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:doc_scanner/core/export_path/export_path.dart';
 import 'package:doc_scanner/features/custom_camera_view/controller/test_open_cv.dart';
 import 'package:doc_scanner/features/custom_camera_view/model/flash_model.dart';
@@ -18,6 +19,20 @@ class CustomCameraController extends GetxController {
   List<cv.Point>? corners;
   List<List<cv.Point>> cornerBuffer = [];
   static const int bufferSize = 5;
+
+  // Auto-Capture Mode
+  bool isAutoCapture = true;
+  double autoCaptureProgress = 0.0;
+  DateTime? _stableSince;
+  DateTime? _lastAutoCaptureTime;
+  List<cv.Point>? _prevCorners;
+
+  void toggleAutoCapture(bool enabled) {
+    isAutoCapture = enabled;
+    autoCaptureProgress = 0.0;
+    _stableSince = null;
+    update();
+  }
 
   bool isFlashing = false;
   bool isSavingDoc = false;
@@ -70,18 +85,23 @@ class CustomCameraController extends GetxController {
 
           // Calculate average corners
           corners = _getAverageCorners();
+          _checkAutoCapture(corners!);
         } else {
           // If no detection, clear corners slowly or keep last good one
-          // For now, let's just keep the last one but clear it if it's too old
           if (cornerBuffer.isNotEmpty) {
             cornerBuffer.removeAt(0);
             if (cornerBuffer.isEmpty) {
               corners = null;
+              autoCaptureProgress = 0.0;
+              _stableSince = null;
             } else {
               corners = _getAverageCorners();
+              _checkAutoCapture(corners!);
             }
           } else {
             corners = null;
+            autoCaptureProgress = 0.0;
+            _stableSince = null;
           }
         }
 
@@ -91,6 +111,57 @@ class CustomCameraController extends GetxController {
     } catch (e) {
       Logger().i("Failed To do at Camera Controller because: $e");
     }
+  }
+
+  void _checkAutoCapture(List<cv.Point> currentCorners) {
+    if (!isAutoCapture || isCapturing || isSavingDoc) {
+      autoCaptureProgress = 0.0;
+      _stableSince = null;
+      return;
+    }
+
+    final now = DateTime.now();
+    // Cooldown check (2.5 seconds after last auto-capture)
+    if (_lastAutoCaptureTime != null &&
+        now.difference(_lastAutoCaptureTime!).inMilliseconds < 2500) {
+      autoCaptureProgress = 0.0;
+      _stableSince = null;
+      return;
+    }
+
+    // Check corner stability between frames
+    if (_prevCorners != null && _prevCorners!.length == 4 && currentCorners.length == 4) {
+      double maxShift = 0;
+      for (int i = 0; i < 4; i++) {
+        double dist = (currentCorners[i].x - _prevCorners![i].x).abs() +
+            (currentCorners[i].y - _prevCorners![i].y).abs().toDouble();
+        if (dist > maxShift) maxShift = dist;
+      }
+
+      // If shifted more than 35 pixels, the user is moving camera/document
+      if (maxShift > 35) {
+        _stableSince = now;
+        autoCaptureProgress = 0.0;
+      } else {
+        _stableSince ??= now;
+        final elapsedMs = now.difference(_stableSince!).inMilliseconds;
+        const targetDurationMs = 1100; // ~1.1s of steady hold
+        autoCaptureProgress = (elapsedMs / targetDurationMs).clamp(0.0, 1.0);
+
+        if (autoCaptureProgress >= 1.0) {
+          _lastAutoCaptureTime = now;
+          _stableSince = null;
+          autoCaptureProgress = 0.0;
+          HapticFeedback.heavyImpact();
+          captureAndProcess();
+        }
+      }
+    } else {
+      _stableSince = now;
+      autoCaptureProgress = 0.0;
+    }
+
+    _prevCorners = currentCorners;
   }
 
   void updatePageNumber(int pageNumber) {

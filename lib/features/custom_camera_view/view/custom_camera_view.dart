@@ -140,13 +140,42 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
               onTap: () {
                 controller.captureAndProcess();
               },
-              child: Container(
-                padding: EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(width: 2, color: Colors.white),
-                ),
-                child: CircleAvatar(backgroundColor: Colors.blue, radius: 30),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  if (controller.isAutoCapture && controller.autoCaptureProgress > 0)
+                    SizedBox(
+                      width: 74,
+                      height: 74,
+                      child: CircularProgressIndicator(
+                        value: controller.autoCaptureProgress,
+                        strokeWidth: 4,
+                        valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF10B981)),
+                        backgroundColor: Colors.white24,
+                      ),
+                    ),
+                  Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        width: 2.5,
+                        color: controller.isAutoCapture && controller.autoCaptureProgress > 0
+                            ? const Color(0xFF10B981)
+                            : Colors.white,
+                      ),
+                    ),
+                    child: CircleAvatar(
+                      backgroundColor: controller.isAutoCapture
+                          ? const Color(0xFF2563EB)
+                          : Colors.white,
+                      radius: 28,
+                      child: controller.isAutoCapture
+                          ? const Icon(Icons.auto_awesome, color: Colors.white, size: 24)
+                          : const Icon(Icons.camera_alt, color: Colors.black87, size: 24),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -248,31 +277,63 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
               left: 0,
               right: 0,
               child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF1D4ED8).withValues(alpha: 0.88),
+                    color: controller.isAutoCapture && controller.autoCaptureProgress > 0
+                        ? const Color(0xFF10B981).withValues(alpha: 0.95)
+                        : const Color(0xFF1D4ED8).withValues(alpha: 0.88),
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.2),
-                        blurRadius: 6,
+                        color: controller.isAutoCapture && controller.autoCaptureProgress > 0
+                            ? const Color(0xFF10B981).withValues(alpha: 0.45)
+                            : Colors.black.withValues(alpha: 0.25),
+                        blurRadius: 8,
+                        spreadRadius: controller.isAutoCapture && controller.autoCaptureProgress > 0 ? 2 : 0,
                       ),
                     ],
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.auto_awesome, color: Colors.white, size: 14),
-                      SizedBox(width: 6),
-                      Text(
-                        'Document Detected',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
+                      if (controller.isAutoCapture && controller.autoCaptureProgress > 0) ...[
+                        const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Hold steady... ${(controller.autoCaptureProgress * 100).toInt()}%',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ] else ...[
+                        Icon(
+                          controller.isAutoCapture ? Icons.auto_awesome : Icons.check_circle_outline,
+                          color: Colors.white,
+                          size: 15,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          controller.isAutoCapture
+                              ? 'Document Detected — Hold Steady'
+                              : 'Document Detected',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -346,14 +407,92 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Row(
-        mainAxisAlignment: .spaceBetween,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           buildCustomButton(
             onTap: () {
               controller.capturedImages.clear();
               Navigator.pop(context);
             },
-            child: Icon(Icons.close, size: 30, color: Colors.blue),
+            child: const Icon(Icons.close, size: 28, color: Colors.white),
+          ),
+          // Auto / Manual Mode Toggle Pill
+          Container(
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                GestureDetector(
+                  onTap: () => controller.toggleAutoCapture(true),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: controller.isAutoCapture
+                          ? const Color(0xFF2563EB)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.auto_awesome,
+                          color: controller.isAutoCapture ? Colors.white : Colors.white60,
+                          size: 14,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Auto',
+                          style: TextStyle(
+                            color: controller.isAutoCapture ? Colors.white : Colors.white60,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () => controller.toggleAutoCapture(false),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: !controller.isAutoCapture
+                          ? const Color(0xFF2563EB)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.touch_app,
+                          color: !controller.isAutoCapture ? Colors.white : Colors.white60,
+                          size: 14,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Manual',
+                          style: TextStyle(
+                            color: !controller.isAutoCapture ? Colors.white : Colors.white60,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
           buildCustomButton(
             onTap: () {
