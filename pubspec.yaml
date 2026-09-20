@@ -45,6 +45,8 @@ dependencies:
   pdf: ^3.12.0
   image: ^4.8.0
   tflite_flutter: ^0.12.1
+  share_plus: ^10.1.4
+  image_picker: ^1.1.2
 
 dev_dependencies:
   flutter_test:

@@ -22,6 +22,9 @@ class AppRoutes {
     } else if (setting.name == Practice.name) {
       screenWidget = Practice();
     }
-    return MaterialPageRoute(builder: (context) => screenWidget);
+    return MaterialPageRoute(
+      builder: (context) => screenWidget,
+      settings: setting,
+    );
   }
 }

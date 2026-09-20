@@ -93,6 +93,14 @@ class CustomTextTheme {
     return TextTheme.of(context).titleMedium!;
   }
 
+  static TextStyle fontSize16(BuildContext context) {
+    return TextTheme.of(context).bodyLarge!.copyWith(fontSize: 16);
+  }
+
+  static TextStyle fontSize16bold(BuildContext context) {
+    return TextTheme.of(context).bodyLarge!.copyWith(fontSize: 16, fontWeight: FontWeight.bold);
+  }
+
   static TextStyle fontSize14(BuildContext context) {
     return TextTheme.of(context).bodyLarge!;
   }

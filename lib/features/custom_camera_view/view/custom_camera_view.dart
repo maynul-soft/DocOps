@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:doc_scanner/core/export_path/export_path.dart';
 import 'package:doc_scanner/features/custom_camera_view/model/change_flash_mood_button_model.dart';
 import 'package:doc_scanner/features/custom_camera_view/widget/document_corner_painter.dart';
+import 'package:image_picker/image_picker.dart';
 
 class CustomCameraScreen extends StatefulWidget {
   const CustomCameraScreen({super.key});
@@ -86,11 +87,13 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
           Expanded(
             flex: 1,
             child: buildCustomButton(
-              onTap: () {
-                //TODO: implement with this logic
-
-                // controller.capturedImages.isEmpty
-
+              onTap: () async {
+                final picker = ImagePicker();
+                final picked = await picker.pickMultiImage();
+                if (picked.isNotEmpty) {
+                  controller.capturedImages.addAll(picked.map((e) => e.path));
+                  controller.update();
+                }
               },
               child: Column(
                 children: [
@@ -212,7 +215,7 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
                 ],
               ),
             ),
-          if (controller.corners != null && controller.imageSize != null)
+          if (controller.corners != null && controller.imageSize != null) ...[
             Positioned.fill(
               child: CustomPaint(
                 painter: DocumentCornerPainter(
@@ -221,6 +224,42 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
                 ),
               ),
             ),
+            Positioned(
+              top: 16,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1D4ED8).withValues(alpha: 0.88),
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.2),
+                        blurRadius: 6,
+                      ),
+                    ],
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.auto_awesome, color: Colors.white, size: 14),
+                      SizedBox(width: 6),
+                      Text(
+                        'Document Detected',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
           controller.capturedImages.isNotEmpty
               ? Positioned(
                   bottom: 10,

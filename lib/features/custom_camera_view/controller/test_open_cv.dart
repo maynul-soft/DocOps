@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+// ignore: library_prefixes
 import 'dart:math' as Math;
 import 'package:doc_scanner/core/export_path/export_path.dart';
 import 'package:doc_scanner/features/custom_camera_view/model/processed_image_model.dart';
@@ -176,7 +177,6 @@ class TestOpenCv {
 
     cv.VecPoint? bestApprox;
     cv.VecPoint? globalLargestContour;
-    double maxArea = 0;
     double globalMaxArea = 0;
     final imageArea = src.rows * src.cols;
 
