@@ -1,8 +1,24 @@
+import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:doc_scanner/core/export_path/export_path.dart';
 import 'package:doc_scanner/features/edit_doc/controller/edit_doc_controller.dart';
 import 'package:doc_scanner/features/edit_doc/model/draw_model.dart';
+import 'package:doc_scanner/features/edit_doc/widget/signature_dialog.dart';
 import 'package:opencv_dart/opencv_dart.dart' as cv;
+
+class PlacedSignature {
+  final String id;
+  final ui.Image image;
+  Offset position;
+  Size size;
+
+  PlacedSignature({
+    required this.id,
+    required this.image,
+    required this.position,
+    required this.size,
+  });
+}
 
 class EditDocView extends StatefulWidget {
   final String? imagePath;
@@ -18,6 +34,10 @@ class _EditDocViewState extends State<EditDocView> {
   ui.Image? image;
   String? _currentPath;
   Size _canvasSize = Size.zero;
+
+  // Digital Signatures
+  List<PlacedSignature> placedSignatures = [];
+  String? selectedSignatureId;
 
   // Crop State
   List<Offset> cropPoints = []; // 4 points: TL, TR, BR, BL in screen coordinates
@@ -66,6 +86,9 @@ class _EditDocViewState extends State<EditDocView> {
   @override
   void dispose() {
     image?.dispose();
+    for (final sig in placedSignatures) {
+      sig.image.dispose();
+    }
     super.dispose();
   }
 
@@ -172,6 +195,36 @@ class _EditDocViewState extends State<EditDocView> {
     }
   }
 
+  void _openSignatureDialog(EditDocController controller) async {
+    if (controller.isCropping) controller.toggleCropMode();
+    if (controller.isDrawing) controller.onTapToDraw();
+
+    final sigImage = await SignatureDialog.show(context);
+    if (sigImage != null && mounted) {
+      final aspect = sigImage.width / sigImage.height;
+      const initialWidth = 140.0;
+      final initialHeight = initialWidth / aspect;
+
+      final rect = imageDisplayRect ?? Rect.fromLTWH(0, 0, _canvasSize.width, _canvasSize.height);
+      final posX = (rect.center.dx - initialWidth / 2)
+          .clamp(rect.left, (rect.right - initialWidth).clamp(rect.left, double.infinity));
+      final posY = (rect.bottom - initialHeight - 30)
+          .clamp(rect.top, (rect.bottom - initialHeight).clamp(rect.top, double.infinity));
+
+      final newSig = PlacedSignature(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        image: sigImage,
+        position: Offset(posX, posY),
+        size: Size(initialWidth, initialHeight),
+      );
+
+      setState(() {
+        placedSignatures.add(newSig);
+        selectedSignatureId = newSig.id;
+      });
+    }
+  }
+
   void _onTapDone(EditDocController controller) async {
     final path = activeImagePath;
     if (path == null) {
@@ -185,22 +238,97 @@ class _EditDocViewState extends State<EditDocView> {
       return;
     }
 
-    // If user drew lines, save the composite
-    if (controller.pointList.isNotEmpty && _canvasSize.width > 0) {
-      final success = await controller.saveEditedImage(
+    // If user drew lines or placed signatures, save high-res composite
+    if ((controller.pointList.isNotEmpty || placedSignatures.isNotEmpty) &&
+        image != null &&
+        imageDisplayRect != null) {
+      final success = await _saveHighResEditedDocument(
         imagePath: path,
-        width: _canvasSize.width.toInt(),
-        height: _canvasSize.height.toInt(),
+        controller: controller,
       );
       if (success) {
         controller.pointList.clear();
         controller.reDoPoints.clear();
+        placedSignatures.clear();
         Get.back(result: true);
         return;
       }
     }
 
     Get.back(result: true);
+  }
+
+  Future<bool> _saveHighResEditedDocument({
+    required String imagePath,
+    required EditDocController controller,
+  }) async {
+    if (image == null || imageDisplayRect == null) return false;
+
+    try {
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      final baseImage = image!;
+      final displayRect = imageDisplayRect!;
+
+      final origW = baseImage.width.toDouble();
+      final origH = baseImage.height.toDouble();
+
+      // Draw base image at full resolution
+      canvas.drawImage(baseImage, Offset.zero, Paint());
+
+      final scaleX = origW / displayRect.width;
+      final scaleY = origH / displayRect.height;
+
+      // Draw lines scaled to high-res
+      for (final line in controller.pointList) {
+        if (line.point.isEmpty) continue;
+        final paint = Paint()
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round
+          ..style = PaintingStyle.stroke
+          ..color = line.color
+          ..strokeWidth = line.width * scaleX;
+
+        for (int i = 0; i < line.point.length - 1; i++) {
+          final p1 = Offset(
+            (line.point[i].dx - displayRect.left) * scaleX,
+            (line.point[i].dy - displayRect.top) * scaleY,
+          );
+          final p2 = Offset(
+            (line.point[i + 1].dx - displayRect.left) * scaleX,
+            (line.point[i + 1].dy - displayRect.top) * scaleY,
+          );
+          canvas.drawLine(p1, p2, paint);
+        }
+      }
+
+      // Draw signatures scaled to high-res
+      for (final sig in placedSignatures) {
+        final sigX = (sig.position.dx - displayRect.left) * scaleX;
+        final sigY = (sig.position.dy - displayRect.top) * scaleY;
+        final sigW = sig.size.width * scaleX;
+        final sigH = sig.size.height * scaleY;
+
+        paintImage(
+          canvas: canvas,
+          rect: Rect.fromLTWH(sigX, sigY, sigW, sigH),
+          image: sig.image,
+          fit: BoxFit.contain,
+        );
+      }
+
+      final picture = recorder.endRecording();
+      final compositeImage = await picture.toImage(baseImage.width, baseImage.height);
+      final byteData = await compositeImage.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) return false;
+
+      final file = File(imagePath);
+      await file.writeAsBytes(byteData.buffer.asUint8List());
+      return true;
+    } catch (e) {
+      Logger().e('Error saving high-res document with signature: $e');
+      return false;
+    }
   }
 
   void _onTapRotate(EditDocController controller) async {
@@ -283,6 +411,98 @@ class _EditDocViewState extends State<EditDocView> {
                             ),
                           ),
                         ),
+                        // Interactive Digital Signature Overlays
+                        ...placedSignatures.map((sig) {
+                          final isSelected = selectedSignatureId == sig.id;
+                          return Positioned(
+                            left: sig.position.dx,
+                            top: sig.position.dy,
+                            width: sig.size.width,
+                            height: sig.size.height,
+                            child: GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  selectedSignatureId = sig.id;
+                                });
+                              },
+                              onPanUpdate: (details) {
+                                setState(() {
+                                  selectedSignatureId = sig.id;
+                                  sig.position += details.delta;
+                                });
+                              },
+                              child: Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  // Signature image & selection border
+                                  Container(
+                                    width: sig.size.width,
+                                    height: sig.size.height,
+                                    decoration: BoxDecoration(
+                                      border: isSelected
+                                          ? Border.all(color: const Color(0xFF3B82F6), width: 1.5)
+                                          : null,
+                                      color: isSelected
+                                          ? const Color(0xFF3B82F6).withValues(alpha: 0.08)
+                                          : null,
+                                    ),
+                                    child: RawImage(
+                                      image: sig.image,
+                                      fit: BoxFit.contain,
+                                    ),
+                                  ),
+                                  // Delete button (top-right)
+                                  if (isSelected)
+                                    Positioned(
+                                      top: -12,
+                                      right: -12,
+                                      child: GestureDetector(
+                                        onTap: () {
+                                          setState(() {
+                                            placedSignatures.remove(sig);
+                                            if (selectedSignatureId == sig.id) {
+                                              selectedSignatureId = null;
+                                            }
+                                          });
+                                        },
+                                        child: Container(
+                                          padding: const EdgeInsets.all(4),
+                                          decoration: const BoxDecoration(
+                                            color: Colors.red,
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: const Icon(Icons.close, color: Colors.white, size: 14),
+                                        ),
+                                      ),
+                                    ),
+                                  // Resize handle (bottom-right)
+                                  if (isSelected)
+                                    Positioned(
+                                      bottom: -10,
+                                      right: -10,
+                                      child: GestureDetector(
+                                        onPanUpdate: (details) {
+                                          setState(() {
+                                            final newW = (sig.size.width + details.delta.dx).clamp(60.0, 350.0);
+                                            final aspect = sig.image.width / sig.image.height;
+                                            sig.size = Size(newW, newW / aspect);
+                                          });
+                                        },
+                                        child: Container(
+                                          padding: const EdgeInsets.all(4),
+                                          decoration: const BoxDecoration(
+                                            color: Color(0xFF2563EB),
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: const Icon(Icons.aspect_ratio, color: Colors.white, size: 14),
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }),
                         if (isProcessingCrop)
                           Container(
                             color: Colors.black.withValues(alpha: 0.5),
@@ -463,6 +683,12 @@ class _EditDocViewState extends State<EditDocView> {
           },
           title: 'Draw',
           color: editDocController.isDrawing ? Colors.blue : Colors.white,
+        ),
+        buildCustomButton(
+          icon: Icons.draw_outlined,
+          onTap: () => _openSignatureDialog(editDocController),
+          title: 'Signature',
+          color: placedSignatures.isNotEmpty ? Colors.blue : Colors.white,
         ),
         buildCustomButton(
           icon: Icons.rotate_right,

@@ -3,6 +3,8 @@ import 'package:doc_scanner/core/export_path/export_path.dart';
 import 'package:doc_scanner/features/custom_camera_view/controller/test_open_cv.dart';
 import 'package:doc_scanner/features/custom_camera_view/model/flash_model.dart';
 import 'package:doc_scanner/features/custom_camera_view/model/processed_image_model.dart';
+import 'package:doc_scanner/features/custom_camera_view/widget/scan_guide_overlay.dart';
+import 'package:doc_scanner/features/custom_camera_view/utils/id_card_stitcher.dart';
 import 'package:opencv_dart/opencv.dart' as cv;
 import 'package:doc_scanner/core/services/tflite/tflite_service.dart';
 
@@ -19,6 +21,24 @@ class CustomCameraController extends GetxController {
   List<cv.Point>? corners;
   List<List<cv.Point>> cornerBuffer = [];
   static const int bufferSize = 5;
+
+  // Scan Modes: Document, ID Card, Passport
+  CameraScanMode scanMode = CameraScanMode.document;
+  int idCardStep = 1; // 1 = Front, 2 = Back
+  String? idCardFrontPath;
+
+  void setScanMode(CameraScanMode mode) {
+    scanMode = mode;
+    idCardStep = 1;
+    idCardFrontPath = null;
+    update();
+  }
+
+  void resetIdCardScan() {
+    idCardStep = 1;
+    idCardFrontPath = null;
+    update();
+  }
 
   // Auto-Capture Mode
   bool isAutoCapture = true;
@@ -297,34 +317,74 @@ class CustomCameraController extends GetxController {
         finalCorners ??= TestOpenCv.processDocuments(mat);
       }
 
+      String resultPath = image.path;
       if (finalCorners != null && finalCorners.length == 4) {
         // Warp and apply Magic Color
         final processedBytes = TestOpenCv.processAndWarp(mat, finalCorners);
-
         if (processedBytes != null) {
-          // Save processed image
-          final fileName = 'doc_${DateTime.now().millisecondsSinceEpoch}.jpg';
-          final path = await ExportPath.saveImageToDir(
+          final prefix = scanMode == CameraScanMode.idCard
+              ? 'id'
+              : (scanMode == CameraScanMode.passport ? 'passport' : 'doc');
+          final fileName = '${prefix}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+          resultPath = await ExportPath.saveImageToDir(
             processedBytes,
             fileName,
           );
-          capturedImages.add(path);
-
-          mat.dispose();
-
-          // End saving animation after processing
-          isSavingDoc = false;
-          update();
-
-          return path;
         }
       }
 
-      // Fallback: if detection fails, save the original
-      capturedImages.add(image.path);
       mat.dispose();
-      isSavingDoc = false;
-      return image.path;
+
+      // Handle ID Card dual-side scan flow
+      if (scanMode == CameraScanMode.idCard) {
+        if (idCardStep == 1) {
+          idCardFrontPath = resultPath;
+          idCardStep = 2;
+          isSavingDoc = false;
+          Get.snackbar(
+            'Front Side Saved',
+            'Now flip your card and scan the Back Side',
+            snackPosition: SnackPosition.BOTTOM,
+            backgroundColor: const Color(0xFF1E293B),
+            colorText: Colors.white,
+            duration: const Duration(seconds: 3),
+          );
+          update();
+          return resultPath;
+        } else {
+          // Step 2: Stitch Front + Back onto 1 A4 page
+          final stitched = await IdCardStitcher.stitchIdCard(
+            frontPath: idCardFrontPath!,
+            backPath: resultPath,
+          );
+          idCardStep = 1;
+          idCardFrontPath = null;
+          isSavingDoc = false;
+
+          if (stitched != null) {
+            capturedImages.add(stitched);
+            Get.snackbar(
+              'ID Card Compiled',
+              'Front and Back combined onto a single page!',
+              snackPosition: SnackPosition.BOTTOM,
+              backgroundColor: const Color(0xFF10B981),
+              colorText: Colors.white,
+            );
+            update();
+            return stitched;
+          } else {
+            capturedImages.add(resultPath);
+            update();
+            return resultPath;
+          }
+        }
+      } else {
+        // Document & Passport modes: add single page
+        capturedImages.add(resultPath);
+        isSavingDoc = false;
+        update();
+        return resultPath;
+      }
     } catch (e) {
       Logger().e('Capture error: $e');
       isFlashing = false;

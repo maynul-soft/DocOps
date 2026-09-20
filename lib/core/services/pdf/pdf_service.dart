@@ -1,17 +1,20 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:doc_scanner/features/home/model/document_model.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:share_plus/share_plus.dart';
 import 'package:logger/logger.dart';
+import 'package:syncfusion_flutter_pdf/pdf.dart' as sf;
 
 class PdfService {
-  /// Generate an in-memory or temporary A4 PDF from a list of image paths
+  /// Generate an in-memory or temporary A4 PDF from a list of image paths, optionally password protected
   static Future<String?> generatePdfFromImages(
     List<String> imagePaths,
-    String docName,
-  ) async {
+    String docName, {
+    String? password,
+  }) async {
     try {
       if (imagePaths.isEmpty) return null;
 
@@ -37,15 +40,33 @@ class PdfService {
         );
       }
 
+      Uint8List pdfBytes = await pdfDoc.save();
+
+      // Apply 256-bit AES encryption if password is provided
+      final isLocked = password != null && password.trim().isNotEmpty;
+      if (isLocked) {
+        final sfDoc = sf.PdfDocument(inputBytes: pdfBytes);
+        sfDoc.security.userPassword = password.trim();
+        sfDoc.security.ownerPassword = password.trim();
+        sfDoc.security.algorithm = sf.PdfEncryptionAlgorithm.aesx256Bit;
+        sfDoc.security.permissions.addAll([
+          sf.PdfPermissionsFlags.print,
+          sf.PdfPermissionsFlags.copyContent,
+        ]);
+        pdfBytes = Uint8List.fromList(await sfDoc.save());
+        sfDoc.dispose();
+      }
+
       final tempDir = await getTemporaryDirectory();
       final sanitizedName = docName.replaceAll(RegExp(r'[^\w\s-]'), '_');
+      final suffix = isLocked ? '_locked' : '';
       final outputPath =
-          '${tempDir.path}/${sanitizedName}_${DateTime.now().millisecondsSinceEpoch}.pdf';
+          '${tempDir.path}/$sanitizedName${suffix}_${DateTime.now().millisecondsSinceEpoch}.pdf';
 
       final file = File(outputPath);
-      await file.writeAsBytes(await pdfDoc.save());
+      await file.writeAsBytes(pdfBytes);
 
-      Logger().i('Generated dynamic PDF for share: $outputPath');
+      Logger().i('Generated dynamic PDF for share: $outputPath (Protected: $isLocked)');
       return outputPath;
     } catch (e) {
       Logger().e('Failed to generate dynamic PDF: $e');
@@ -53,20 +74,28 @@ class PdfService {
     }
   }
 
-  /// Share document either as a compiled PDF or as individual raw images
+  /// Share document either as a compiled PDF (with optional password) or as individual raw images
   static Future<void> shareDocument({
     required DocumentModel doc,
     required bool asPdf,
+    String? password,
   }) async {
     try {
       if (doc.imagePaths.isEmpty) return;
 
       if (asPdf) {
-        final pdfPath = await generatePdfFromImages(doc.imagePaths, doc.name);
+        final pdfPath = await generatePdfFromImages(
+          doc.imagePaths,
+          doc.name,
+          password: password,
+        );
         if (pdfPath != null) {
+          final isLocked = password != null && password.trim().isNotEmpty;
           await Share.shareXFiles(
             [XFile(pdfPath)],
-            text: '${doc.name}.pdf',
+            text: isLocked
+                ? '${doc.name} (🔒 Password Protected).pdf'
+                : '${doc.name}.pdf',
             subject: doc.name,
           );
         }

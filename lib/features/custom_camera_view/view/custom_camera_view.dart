@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:doc_scanner/core/export_path/export_path.dart';
 import 'package:doc_scanner/features/custom_camera_view/model/change_flash_mood_button_model.dart';
 import 'package:doc_scanner/features/custom_camera_view/widget/document_corner_painter.dart';
+import 'package:doc_scanner/features/custom_camera_view/widget/scan_guide_overlay.dart';
 import 'package:image_picker/image_picker.dart';
 
 class CustomCameraScreen extends StatefulWidget {
@@ -76,17 +77,22 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
               height: double.maxFinite,
               width: double.maxFinite,
               decoration: const BoxDecoration(color: Colors.black),
-            child: Column(
-              children: [
-                Gap.height(50),
-                buildAppBarSection(controller, context),
-                Gap.height(10),
-                buildCameraViewSection(context, cam, controller),
-                Gap.height(20),
-                buildBottomViewSection(controller, context),
-              ],
-            ),
-          );
+              child: Column(
+                children: [
+                  Gap.height(50),
+                  buildAppBarSection(controller, context),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: buildCameraViewSection(context, cam, controller),
+                  ),
+                  const SizedBox(height: 10),
+                  buildModeSelector(controller),
+                  const SizedBox(height: 6),
+                  buildBottomViewSection(controller, context),
+                  const SizedBox(height: 12),
+                ],
+              ),
+            );
         },
       ),
     ),
@@ -223,6 +229,72 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
     );
   }
 
+  Widget buildModeSelector(CustomCameraController controller) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _buildModeChip(
+          title: 'Document',
+          icon: Icons.description_outlined,
+          isSelected: controller.scanMode == CameraScanMode.document,
+          onTap: () => controller.setScanMode(CameraScanMode.document),
+        ),
+        const SizedBox(width: 8),
+        _buildModeChip(
+          title: 'ID Card',
+          icon: Icons.badge_outlined,
+          isSelected: controller.scanMode == CameraScanMode.idCard,
+          onTap: () => controller.setScanMode(CameraScanMode.idCard),
+        ),
+        const SizedBox(width: 8),
+        _buildModeChip(
+          title: 'Passport',
+          icon: Icons.menu_book_outlined,
+          isSelected: controller.scanMode == CameraScanMode.passport,
+          onTap: () => controller.setScanMode(CameraScanMode.passport),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildModeChip({
+    required String title,
+    required IconData icon,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.white : Colors.white.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 15,
+              color: isSelected ? Colors.black : Colors.white70,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              title,
+              style: TextStyle(
+                color: isSelected ? Colors.black : Colors.white70,
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget buildCameraViewSection(
     BuildContext context,
     CameraController cam,
@@ -235,7 +307,7 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
 
     return SizedBox(
       width: double.maxFinite,
-      height: MediaQuery.of(context).size.height * 0.750,
+      height: double.maxFinite,
       child: Stack(
         children: [
           Positioned.fill(child: CameraPreview(cam)),
@@ -255,7 +327,9 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
                   const CircularProgressIndicator(color: Colors.white),
                   const SizedBox(height: 10),
                   Text(
-                    'Enhancing...',
+                    controller.scanMode == CameraScanMode.idCard
+                        ? (controller.idCardStep == 2 ? 'Stitching ID Card...' : 'Saving Front...')
+                        : 'Enhancing...',
                     style: CustomTextTheme.fontSize14(context).copyWith(
                       color: Colors.white,
                     ),
@@ -263,7 +337,15 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
                 ],
               ),
             ),
-          if (controller.corners != null && controller.imageSize != null) ...[
+          // ID Card & Passport Alignment Guideline Overlay
+          ScanGuideOverlay(
+            mode: controller.scanMode,
+            idCardStep: controller.idCardStep,
+            isDetected: controller.corners != null,
+          ),
+          if (controller.scanMode == CameraScanMode.document &&
+              controller.corners != null &&
+              controller.imageSize != null) ...[
             Positioned.fill(
               child: CustomPaint(
                 painter: DocumentCornerPainter(

@@ -1,5 +1,7 @@
 import 'dart:io';
 import 'package:doc_scanner/core/export_path/export_path.dart';
+import 'package:doc_scanner/core/services/pdf/pdf_service.dart';
+import 'package:doc_scanner/core/widgets/password_prompt_dialog.dart';
 import 'package:doc_scanner/features/home/controller/home_controller.dart';
 import 'package:doc_scanner/features/home/model/document_model.dart';
 import 'package:intl/intl.dart';
@@ -245,6 +247,8 @@ class _HomeViewState extends State<HomeView> {
                       _showRenameDialog(doc);
                     } else if (action == 'share_pdf') {
                       homeController.shareDocument(doc, true);
+                    } else if (action == 'share_locked_pdf') {
+                      _showPasswordShareDialog(doc);
                     } else if (action == 'share_images') {
                       homeController.shareDocument(doc, false);
                     } else if (action == 'delete') {
@@ -269,6 +273,16 @@ class _HomeViewState extends State<HomeView> {
                           Icon(Icons.picture_as_pdf_outlined, size: 18, color: Colors.red),
                           SizedBox(width: 8),
                           Text('Share as PDF'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'share_locked_pdf',
+                      child: Row(
+                        children: [
+                          Icon(Icons.lock_outline, size: 18, color: Colors.amber),
+                          SizedBox(width: 8),
+                          Text('Share with Password 🔒'),
                         ],
                       ),
                     ),
@@ -335,6 +349,13 @@ class _HomeViewState extends State<HomeView> {
         ],
       ),
     );
+  }
+
+  void _showPasswordShareDialog(DocumentModel doc) async {
+    final password = await PasswordPromptDialog.show(context, doc.name);
+    if (password != null && password.isNotEmpty) {
+      PdfService.shareDocument(doc: doc, asPdf: true, password: password);
+    }
   }
 
   void _showDeleteDialog(DocumentModel doc) {

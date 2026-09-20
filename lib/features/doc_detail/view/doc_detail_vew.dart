@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:doc_scanner/core/export_path/export_path.dart';
 import 'package:doc_scanner/core/services/document_storage/document_storage_service.dart';
 import 'package:doc_scanner/core/services/pdf/pdf_service.dart';
+import 'package:doc_scanner/core/widgets/password_prompt_dialog.dart';
 import 'package:doc_scanner/features/home/controller/home_controller.dart';
 import 'package:doc_scanner/features/home/model/document_model.dart';
 
@@ -87,6 +88,26 @@ class _DocDetailVewState extends State<DocDetailVew> {
                 onTap: () {
                   Navigator.pop(ctx);
                   PdfService.shareDocument(doc: _document!, asPdf: true);
+                },
+              ),
+              const Divider(),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.lock, color: Colors.amber),
+                ),
+                title: const Text('Share Protected PDF (Password 🔒)', style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: const Text('256-bit AES encrypted PDF requiring password'),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  final password = await PasswordPromptDialog.show(context, _document!.name);
+                  if (password != null && password.isNotEmpty) {
+                    PdfService.shareDocument(doc: _document!, asPdf: true, password: password);
+                  }
                 },
               ),
               const Divider(),
