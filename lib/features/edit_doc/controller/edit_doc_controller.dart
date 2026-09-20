@@ -2,12 +2,15 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:doc_scanner/core/export_path/export_path.dart';
+import 'package:doc_scanner/core/services/tflite/tflite_service.dart';
+import 'package:doc_scanner/features/custom_camera_view/controller/test_open_cv.dart';
 import 'package:doc_scanner/features/edit_doc/model/draw_model.dart';
 import 'package:opencv_dart/opencv_dart.dart' as cv;
 
 class EditDocController extends GetxController {
   List<DrawModel> pointList = [];
   bool isDrawing = false;
+  bool isCropping = false;
   List<DrawModel> reDoPoints = [];
   double lineWidth = 3.0;
   int selectedColorIndex = 0;
@@ -45,6 +48,13 @@ class EditDocController extends GetxController {
 
   void onTapToDraw() {
     isDrawing = !isDrawing;
+    if (isDrawing) isCropping = false;
+    update();
+  }
+
+  void toggleCropMode() {
+    isCropping = !isCropping;
+    if (isCropping) isDrawing = false;
     update();
   }
 
@@ -121,6 +131,56 @@ class EditDocController extends GetxController {
     } catch (e) {
       Logger().e('Failed to rotate image: $e');
       return false;
+    }
+  }
+
+  /// Crops and warps document using 4 corners
+  Future<bool> cropAndWarpImage({
+    required String imagePath,
+    required List<cv.Point> points,
+  }) async {
+    try {
+      final file = File(imagePath);
+      if (!await file.exists()) return false;
+
+      final bytes = await file.readAsBytes();
+      final mat = cv.imdecode(bytes, cv.IMREAD_COLOR);
+
+      final warpedBytes = TestOpenCv.processAndWarp(mat, points);
+      mat.dispose();
+
+      if (warpedBytes != null) {
+        await file.writeAsBytes(warpedBytes);
+        update();
+        return true;
+      }
+      return false;
+    } catch (e) {
+      Logger().e('Error cropping image: $e');
+      return false;
+    }
+  }
+
+  /// Automatically detects document corners on the image file
+  Future<List<cv.Point>?> detectDocumentCorners(String imagePath) async {
+    try {
+      final file = File(imagePath);
+      if (!await file.exists()) return null;
+
+      final bytes = await file.readAsBytes();
+      final mat = cv.imdecode(bytes, cv.IMREAD_COLOR);
+
+      List<cv.Point>? points;
+      if (TfliteService.isLoaded) {
+        points = TfliteService.detectDocument(mat);
+      }
+      points ??= TestOpenCv.processDocuments(mat);
+
+      mat.dispose();
+      return points;
+    } catch (e) {
+      Logger().e('Error detecting corners: $e');
+      return null;
     }
   }
 

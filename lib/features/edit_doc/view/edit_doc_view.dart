@@ -1,7 +1,8 @@
+import 'dart:ui' as ui;
 import 'package:doc_scanner/core/export_path/export_path.dart';
 import 'package:doc_scanner/features/edit_doc/controller/edit_doc_controller.dart';
-import 'dart:ui' as ui;
 import 'package:doc_scanner/features/edit_doc/model/draw_model.dart';
+import 'package:opencv_dart/opencv_dart.dart' as cv;
 
 class EditDocView extends StatefulWidget {
   final String? imagePath;
@@ -18,6 +19,12 @@ class _EditDocViewState extends State<EditDocView> {
   String? _currentPath;
   Size _canvasSize = Size.zero;
 
+  // Crop State
+  List<Offset> cropPoints = []; // 4 points: TL, TR, BR, BL in screen coordinates
+  int? activeCropIndex;
+  Rect? imageDisplayRect;
+  bool isProcessingCrop = false;
+
   String? get activeImagePath =>
       _currentPath ?? widget.imagePath ?? (ModalRoute.of(context)?.settings.arguments as String?);
 
@@ -30,6 +37,7 @@ class _EditDocViewState extends State<EditDocView> {
     if (mounted) {
       setState(() {
         image = loadedImage;
+        cropPoints.clear();
       });
     }
   }
@@ -61,10 +69,119 @@ class _EditDocViewState extends State<EditDocView> {
     super.dispose();
   }
 
+  Rect _calculateImageRect(Size containerSize) {
+    if (image == null || containerSize == Size.zero) return Rect.zero;
+    final fitted = applyBoxFit(
+      BoxFit.contain,
+      Size(image!.width.toDouble(), image!.height.toDouble()),
+      containerSize,
+    );
+    return Alignment.center.inscribe(fitted.destination, Offset.zero & containerSize);
+  }
+
+  void _initDefaultCropPoints() {
+    if (imageDisplayRect == null || imageDisplayRect == Rect.zero) return;
+    final rect = imageDisplayRect!;
+    final dx = rect.width * 0.05;
+    final dy = rect.height * 0.05;
+    cropPoints = [
+      Offset(rect.left + dx, rect.top + dy), // TL
+      Offset(rect.right - dx, rect.top + dy), // TR
+      Offset(rect.right - dx, rect.bottom - dy), // BR
+      Offset(rect.left + dx, rect.bottom - dy), // BL
+    ];
+  }
+
+  void _onEnterCropMode(EditDocController controller) {
+    controller.toggleCropMode();
+    if (controller.isCropping) {
+      _initDefaultCropPoints();
+      setState(() {});
+    }
+  }
+
+  void _onAutoDetectCrop(EditDocController controller) async {
+    final path = activeImagePath;
+    if (path == null || image == null || imageDisplayRect == null) return;
+
+    setState(() => isProcessingCrop = true);
+    final detected = await controller.detectDocumentCorners(path);
+    setState(() => isProcessingCrop = false);
+
+    if (detected != null && detected.length == 4) {
+      final rect = imageDisplayRect!;
+      cropPoints = detected.map((pt) {
+        final sx = rect.left + (pt.x / image!.width) * rect.width;
+        final sy = rect.top + (pt.y / image!.height) * rect.height;
+        return Offset(
+          sx.clamp(rect.left, rect.right),
+          sy.clamp(rect.top, rect.bottom),
+        );
+      }).toList();
+      setState(() {});
+    } else {
+      Get.snackbar('Auto-Detect', 'No clear document border found, using default frame');
+      _initDefaultCropPoints();
+      setState(() {});
+    }
+  }
+
+  void _onResetCrop() {
+    if (imageDisplayRect == null) return;
+    final rect = imageDisplayRect!;
+    cropPoints = [
+      rect.topLeft,
+      rect.topRight,
+      rect.bottomRight,
+      rect.bottomLeft,
+    ];
+    setState(() {});
+  }
+
+  void _onApplyCrop(EditDocController controller) async {
+    final path = activeImagePath;
+    if (path == null || image == null || imageDisplayRect == null || cropPoints.length != 4) {
+      controller.isCropping = false;
+      controller.update();
+      return;
+    }
+
+    setState(() => isProcessingCrop = true);
+
+    final rect = imageDisplayRect!;
+    final cvPoints = cropPoints.map((pt) {
+      final ix = ((pt.dx - rect.left) / rect.width * image!.width).clamp(0, image!.width).toInt();
+      final iy = ((pt.dy - rect.top) / rect.height * image!.height).clamp(0, image!.height).toInt();
+      return cv.Point(ix, iy);
+    }).toList();
+
+    final success = await controller.cropAndWarpImage(
+      imagePath: path,
+      points: cvPoints,
+    );
+
+    setState(() => isProcessingCrop = false);
+
+    if (success) {
+      controller.isCropping = false;
+      controller.update();
+      loadImage();
+      Get.snackbar('Success', 'Document cropped and straightened');
+    } else {
+      Get.snackbar('Error', 'Failed to crop image');
+    }
+  }
+
   void _onTapDone(EditDocController controller) async {
     final path = activeImagePath;
     if (path == null) {
       Get.back();
+      return;
+    }
+
+    // If in crop mode, apply crop first
+    if (controller.isCropping) {
+      _onApplyCrop(controller);
       return;
     }
 
@@ -117,32 +234,73 @@ class _EditDocViewState extends State<EditDocView> {
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(16),
-                    child: GestureDetector(
-                      onPanStart: (details) {
-                        if (!editDocController.isDrawing) return;
-                        editDocController.addStartOffset(details.localPosition);
-                      },
-                      onPanUpdate: (details) {
-                        if (!editDocController.isDrawing) return;
-                        editDocController.addOffset(details.localPosition);
-                      },
-                      onPanEnd: (details) {
-                        if (!editDocController.isDrawing) return;
-                        editDocController.addOffset(details.localPosition);
-                      },
-                      child: LayoutBuilder(
-                        builder: (BuildContext context, BoxConstraints constrains) {
-                          _canvasSize = Size(constrains.maxWidth, constrains.maxHeight);
-                          return CustomPaint(
-                            size: Size(constrains.maxWidth, constrains.maxHeight),
-                            painter: DrawCustomLine(
-                              constrains: constrains,
-                              points: editDocController.pointList,
-                              image: image,
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: GestureDetector(
+                            onPanStart: (details) {
+                              if (editDocController.isCropping) {
+                                _handleCropPanStart(details.localPosition);
+                              } else if (editDocController.isDrawing) {
+                                editDocController.addStartOffset(details.localPosition);
+                              }
+                            },
+                            onPanUpdate: (details) {
+                              if (editDocController.isCropping) {
+                                _handleCropPanUpdate(details.localPosition);
+                              } else if (editDocController.isDrawing) {
+                                editDocController.addOffset(details.localPosition);
+                              }
+                            },
+                            onPanEnd: (details) {
+                              if (editDocController.isCropping) {
+                                activeCropIndex = null;
+                                setState(() {});
+                              } else if (editDocController.isDrawing) {
+                                editDocController.addOffset(details.localPosition);
+                              }
+                            },
+                            child: LayoutBuilder(
+                              builder: (BuildContext context, BoxConstraints constrains) {
+                                _canvasSize = Size(constrains.maxWidth, constrains.maxHeight);
+                                imageDisplayRect = _calculateImageRect(_canvasSize);
+
+                                if (editDocController.isCropping && cropPoints.isEmpty) {
+                                  _initDefaultCropPoints();
+                                }
+
+                                return CustomPaint(
+                                  size: Size(constrains.maxWidth, constrains.maxHeight),
+                                  painter: DrawCustomLine(
+                                    constrains: constrains,
+                                    points: editDocController.pointList,
+                                    image: image,
+                                    cropPoints: editDocController.isCropping ? cropPoints : null,
+                                    activeCropIndex: activeCropIndex,
+                                  ),
+                                );
+                              },
                             ),
-                          );
-                        },
-                      ),
+                          ),
+                        ),
+                        if (isProcessingCrop)
+                          Container(
+                            color: Colors.black.withValues(alpha: 0.5),
+                            child: const Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  CircularProgressIndicator(color: Colors.white),
+                                  SizedBox(height: 12),
+                                  Text(
+                                    'Cropping & Enhancing...',
+                                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 ),
@@ -153,9 +311,11 @@ class _EditDocViewState extends State<EditDocView> {
                     children: [
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 10),
-                        child: !editDocController.isDrawing
-                            ? buildEditOptionButtonSection(editDocController)
-                            : buildDrawFeatureSection(editDocController),
+                        child: editDocController.isCropping
+                            ? buildCropToolbar(editDocController)
+                            : (editDocController.isDrawing
+                                ? buildDrawFeatureSection(editDocController)
+                                : buildEditOptionButtonSection(editDocController)),
                       ),
                     ],
                   ),
@@ -165,6 +325,70 @@ class _EditDocViewState extends State<EditDocView> {
           );
         },
       ),
+    );
+  }
+
+  void _handleCropPanStart(Offset pos) {
+    if (cropPoints.length != 4) return;
+    const hitRadius = 45.0;
+    int? nearest;
+    double minDistance = double.infinity;
+
+    for (int i = 0; i < 4; i++) {
+      final dist = (cropPoints[i] - pos).distance;
+      if (dist < minDistance && dist <= hitRadius) {
+        minDistance = dist;
+        nearest = i;
+      }
+    }
+
+    activeCropIndex = nearest;
+    setState(() {});
+  }
+
+  void _handleCropPanUpdate(Offset pos) {
+    if (activeCropIndex == null || imageDisplayRect == null) return;
+    final rect = imageDisplayRect!;
+    final clampedX = pos.dx.clamp(rect.left, rect.right);
+    final clampedY = pos.dy.clamp(rect.top, rect.bottom);
+
+    cropPoints[activeCropIndex!] = Offset(clampedX, clampedY);
+    setState(() {});
+  }
+
+  Widget buildCropToolbar(EditDocController editDocController) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceAround,
+      children: [
+        buildCustomButton(
+          icon: Icons.close,
+          onTap: () {
+            editDocController.isCropping = false;
+            cropPoints.clear();
+            editDocController.update();
+          },
+          title: 'Cancel',
+          color: Colors.white70,
+        ),
+        buildCustomButton(
+          icon: Icons.fullscreen,
+          onTap: _onResetCrop,
+          title: 'Full Image',
+          color: Colors.white,
+        ),
+        buildCustomButton(
+          icon: Icons.auto_awesome,
+          onTap: () => _onAutoDetectCrop(editDocController),
+          title: 'Auto Detect',
+          color: const Color(0xFF60A5FA),
+        ),
+        buildCustomButton(
+          icon: Icons.check_circle,
+          onTap: () => _onApplyCrop(editDocController),
+          title: 'Apply Crop',
+          color: const Color(0xFF3B82F6),
+        ),
+      ],
     );
   }
 
@@ -227,6 +451,12 @@ class _EditDocViewState extends State<EditDocView> {
       mainAxisAlignment: MainAxisAlignment.spaceAround,
       children: [
         buildCustomButton(
+          icon: Icons.crop,
+          onTap: () => _onEnterCropMode(editDocController),
+          title: 'Crop',
+          color: editDocController.isCropping ? Colors.blue : Colors.white,
+        ),
+        buildCustomButton(
           icon: Icons.edit,
           onTap: () {
             editDocController.onTapToDraw();
@@ -253,7 +483,7 @@ class _EditDocViewState extends State<EditDocView> {
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -304,9 +534,9 @@ class _EditDocViewState extends State<EditDocView> {
                 ),
               ),
               const Spacer(),
-              const Text(
-                'Edit Page',
-                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+              Text(
+                editDocController.isCropping ? 'Adjust Borders' : 'Edit Page',
+                style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const Spacer(),
               GestureDetector(
@@ -330,11 +560,15 @@ class DrawCustomLine extends CustomPainter {
   final List<DrawModel> points;
   final BoxConstraints constrains;
   final ui.Image? image;
+  final List<Offset>? cropPoints;
+  final int? activeCropIndex;
 
   DrawCustomLine({
     required this.points,
     required this.image,
     required this.constrains,
+    this.cropPoints,
+    this.activeCropIndex,
   });
 
   @override
@@ -342,7 +576,7 @@ class DrawCustomLine extends CustomPainter {
     final imageRecorder = ui.PictureRecorder();
     final recordCanvas = Canvas(imageRecorder);
 
-    void renderContent(Canvas c) {
+    void renderBaseAndDrawings(Canvas c) {
       if (image != null) {
         paintImage(
           fit: BoxFit.contain,
@@ -367,11 +601,60 @@ class DrawCustomLine extends CustomPainter {
       }
     }
 
-    renderContent(canvas);
-    renderContent(recordCanvas);
+    renderBaseAndDrawings(canvas);
+    renderBaseAndDrawings(recordCanvas);
 
     final recordedPicture = imageRecorder.endRecording();
     Get.find<EditDocController>().saveRecordedPicture(recordedPicture);
+
+    // Draw Interactive Crop Overlay if in crop mode (only on screen canvas)
+    if (cropPoints != null && cropPoints!.length == 4) {
+      final p0 = cropPoints![0];
+      final p1 = cropPoints![1];
+      final p2 = cropPoints![2];
+      final p3 = cropPoints![3];
+
+      final cropPath = Path()
+        ..moveTo(p0.dx, p0.dy)
+        ..lineTo(p1.dx, p1.dy)
+        ..lineTo(p2.dx, p2.dy)
+        ..lineTo(p3.dx, p3.dy)
+        ..close();
+
+      // Shaded Tint Fill
+      final fillPaint = Paint()
+        ..color = const Color(0xFF2563EB).withValues(alpha: 0.25)
+        ..style = PaintingStyle.fill;
+      canvas.drawPath(cropPath, fillPaint);
+
+      // Border Lines
+      final borderPaint = Paint()
+        ..color = const Color(0xFF3B82F6)
+        ..strokeWidth = 3.0
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round;
+      canvas.drawPath(cropPath, borderPaint);
+
+      // Draw 4 Draggable Corner Handles
+      for (int i = 0; i < 4; i++) {
+        final pt = cropPoints![i];
+        final isActive = activeCropIndex == i;
+
+        // Outer glow
+        canvas.drawCircle(
+          pt,
+          isActive ? 18 : 13,
+          Paint()..color = (isActive ? Colors.white : Colors.white).withValues(alpha: 0.9),
+        );
+        // Inner blue circle
+        canvas.drawCircle(
+          pt,
+          isActive ? 11 : 8,
+          Paint()..color = const Color(0xFF1D4ED8),
+        );
+      }
+    }
   }
 
   @override
