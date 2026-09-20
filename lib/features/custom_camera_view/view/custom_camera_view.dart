@@ -298,70 +298,11 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
       );
     }
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        _buildModeChip(
-          title: 'Document',
-          icon: Icons.description_outlined,
-          isSelected: controller.scanMode == CameraScanMode.document,
-          onTap: () => controller.setScanMode(CameraScanMode.document),
-        ),
-        const SizedBox(width: 8),
-        _buildModeChip(
-          title: 'ID Card',
-          icon: Icons.badge_outlined,
-          isSelected: controller.scanMode == CameraScanMode.idCard,
-          onTap: () => controller.setScanMode(CameraScanMode.idCard),
-        ),
-        const SizedBox(width: 8),
-        _buildModeChip(
-          title: 'Passport',
-          icon: Icons.menu_book_outlined,
-          isSelected: controller.scanMode == CameraScanMode.passport,
-          onTap: () => controller.setScanMode(CameraScanMode.passport),
-        ),
-      ],
-    );
+    // In normal scan mode, ID Card and Passport options are NOT displayed
+    // as they are accessible via dedicated quick actions from the Home screen.
+    return const SizedBox.shrink();
   }
 
-  Widget _buildModeChip({
-    required String title,
-    required IconData icon,
-    required bool isSelected,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.white : Colors.white.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 15,
-              color: isSelected ? Colors.black : Colors.white70,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              title,
-              style: TextStyle(
-                color: isSelected ? Colors.black : Colors.white70,
-                fontSize: 12,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   Widget buildCameraViewSection(
     BuildContext context,

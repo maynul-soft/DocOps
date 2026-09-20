@@ -4,7 +4,6 @@ import 'package:doc_scanner/features/custom_camera_view/controller/test_open_cv.
 import 'package:doc_scanner/features/custom_camera_view/model/flash_model.dart';
 import 'package:doc_scanner/features/custom_camera_view/model/processed_image_model.dart';
 import 'package:doc_scanner/features/custom_camera_view/widget/scan_guide_overlay.dart';
-import 'package:doc_scanner/features/custom_camera_view/utils/id_card_stitcher.dart';
 import 'package:opencv_dart/opencv.dart' as cv;
 import 'package:doc_scanner/core/services/tflite/tflite_service.dart';
 
@@ -56,6 +55,8 @@ class CustomCameraController extends GetxController {
     update();
   }
 
+  DateTime? _lastStreamProcessTime;
+
   bool isFlashing = false;
   bool isSavingDoc = false;
 
@@ -83,20 +84,32 @@ class CustomCameraController extends GetxController {
       cameraController!.startImageStream((CameraImage image) {
         if (isProcessBusy || !isCameraScreenOn) return;
 
+        // Throttle to at most 10 fps to prevent native heap exhaustion and CPU overload
+        final now = DateTime.now();
+        if (_lastStreamProcessTime != null &&
+            now.difference(_lastStreamProcessTime!).inMilliseconds < 100) {
+          return;
+        }
+        _lastStreamProcessTime = now;
+
         // Note: the Mat is rotated 90 degrees in TestOpenCv, so swap width and height
         imageSize = Size(image.height.toDouble(), image.width.toDouble());
 
         isProcessBusy = true;
 
-        Logger().d('Streaming');
-
-        final mat = TestOpenCv.convertImageToMat(image);
-
+        cv.Mat? mat;
         List<cv.Point>? points;
-        if (TfliteService.isLoaded) {
-          points = TfliteService.detectDocument(mat);
+        try {
+          mat = TestOpenCv.convertImageToMat(image);
+          if (TfliteService.isLoaded) {
+            points = TfliteService.detectDocument(mat);
+          }
+          points ??= TestOpenCv.processDocuments(mat);
+        } catch (e) {
+          // Ignore transient camera frame errors
+        } finally {
+          mat?.dispose();
         }
-        points ??= TestOpenCv.processDocuments(mat);
 
         if (points != null && points.length == 4) {
           // Add to buffer for smoothing
@@ -384,17 +397,15 @@ class CustomCameraController extends GetxController {
           update();
           return resultPath;
         } else {
-          // Step 2: Stitch Front + Back onto 1 A4 page
-          final stitched = await IdCardStitcher.stitchIdCard(
-            frontPath: idCardFrontPath!,
-            backPath: resultPath,
-          );
+          // Step 2: Save both Front and Back so user can edit and rotate each side individually
+          final frontPath = idCardFrontPath!;
+          final backPath = resultPath;
           idCardStep = 1;
           idCardFrontPath = null;
           isSavingDoc = false;
 
-          final finalPath = stitched ?? resultPath;
-          capturedImages.add(finalPath);
+          capturedImages.add(frontPath);
+          capturedImages.add(backPath);
           update();
 
           if (isLockedMode) {
@@ -402,14 +413,14 @@ class CustomCameraController extends GetxController {
             onLockedScanComplete?.call();
           } else {
             Get.snackbar(
-              'ID Card Compiled',
-              'Front and Back combined onto a single page!',
+              'ID Card Scanned',
+              'Both sides captured. You can edit and rotate each side.',
               snackPosition: SnackPosition.BOTTOM,
               backgroundColor: const Color(0xFF10B981),
               colorText: Colors.white,
             );
           }
-          return finalPath;
+          return backPath;
         }
       } else if (scanMode == CameraScanMode.passport) {
         // Passport mode: single page capture

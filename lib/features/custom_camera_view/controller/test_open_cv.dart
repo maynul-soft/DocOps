@@ -112,14 +112,7 @@ class TestOpenCv {
       allBytes.add(plane.bytes);
     }
 
-    debugPrint('All bytes ====== $allBytes');
-
-    //make as byte
-
     final bytes = allBytes.toBytes();
-
-    //convert to yovMat
-
     final yuvMat = cv.Mat.fromList(
       (image.height * 1.5).toInt(),
       image.width,
@@ -127,10 +120,7 @@ class TestOpenCv {
       bytes,
     );
 
-    debugPrint('yuvMat ====== $allBytes');
-
     // convert to bgr
-
     final bgrMat = cv.cvtColor(yuvMat, cv.COLOR_YUV2BGRA_NV21);
 
     // Rotate 90 degrees clockwise for Android portrait mode

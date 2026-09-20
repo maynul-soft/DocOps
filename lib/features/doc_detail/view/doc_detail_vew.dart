@@ -334,6 +334,7 @@ class _DocDetailVewState extends State<DocDetailVew> {
           EditDocView.name,
           arguments: imagePath,
         );
+        PaintingBinding.instance.imageCache.evict(FileImage(File(imagePath)));
         await _refreshDocument();
       },
       child: Container(

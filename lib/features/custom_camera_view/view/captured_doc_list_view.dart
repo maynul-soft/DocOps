@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:doc_scanner/core/export_path/export_path.dart';
 import 'package:doc_scanner/core/services/document_storage/document_storage_service.dart';
 import 'package:doc_scanner/features/home/controller/home_controller.dart';
+import 'package:doc_scanner/features/custom_camera_view/utils/id_card_stitcher.dart';
 import 'package:intl/intl.dart';
 
 class CapturedDocListView extends StatefulWidget {
@@ -17,6 +18,7 @@ class CapturedDocListView extends StatefulWidget {
 
 class _CapturedDocListViewState extends State<CapturedDocListView> {
   late PageController _pageController;
+  List<String>? _uncombinedImages;
 
   @override
   void initState() {
@@ -54,7 +56,59 @@ class _CapturedDocListViewState extends State<CapturedDocListView> {
       arguments: path,
     );
     if (mounted) {
+      PaintingBinding.instance.imageCache.evict(FileImage(File(path)));
       setState(() {});
+    }
+  }
+
+  Future<void> _onTapCombineIdCard(CustomCameraController controller) async {
+    if (controller.capturedImages.length != 2) return;
+
+    _uncombinedImages = List<String>.from(controller.capturedImages);
+
+    final stitchedPath = await IdCardStitcher.stitchIdCard(
+      frontPath: controller.capturedImages[0],
+      backPath: controller.capturedImages[1],
+    );
+
+    if (stitchedPath != null) {
+      controller.capturedImages.clear();
+      controller.capturedImages.add(stitchedPath);
+      controller.updatePageNumber(0);
+      _pageController.jumpToPage(0);
+      controller.update();
+      if (mounted) {
+        PaintingBinding.instance.imageCache.evict(FileImage(File(stitchedPath)));
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('ID Card stitched into 1 page! Tap "Separate" to edit sides individually.'),
+            backgroundColor: Color(0xFF10B981),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  void _onTapSeparateIdCard(CustomCameraController controller) {
+    if (_uncombinedImages == null || _uncombinedImages!.length != 2) return;
+
+    controller.capturedImages.clear();
+    controller.capturedImages.addAll(_uncombinedImages!);
+    _uncombinedImages = null;
+    controller.updatePageNumber(0);
+    _pageController.jumpToPage(0);
+    controller.update();
+    if (mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Front and Back separated! You can now edit and rotate each side.'),
+          backgroundColor: Color(0xFF1E293B),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
@@ -85,65 +139,107 @@ class _CapturedDocListViewState extends State<CapturedDocListView> {
     final now = DateTime.now();
     final defaultTitle = 'Scan ${DateFormat('dd MMM yyyy, h:mm a').format(now)}';
     final nameController = TextEditingController(text: defaultTitle);
+    bool combineIdCard = true;
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Save Document'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Enter a title for your document:',
-              style: TextStyle(fontSize: 13, color: Colors.grey),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: nameController,
-              autofocus: true,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Save Document'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Enter a title for your document:',
+                style: TextStyle(fontSize: 13, color: Colors.grey),
               ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: nameController,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                ),
+              ),
+              if (controller.capturedImages.length == 2) ...[
+                const SizedBox(height: 14),
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.blue.withValues(alpha: 0.25)),
+                  ),
+                  child: CheckboxListTile(
+                    dense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                    value: combineIdCard,
+                    onChanged: (val) {
+                      setDialogState(() {
+                        combineIdCard = val ?? true;
+                      });
+                    },
+                    title: const Text(
+                      'Combine onto 1 Page (A4)',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: const Text(
+                      'Stitches Front and Back onto a clean sheet',
+                      style: TextStyle(fontSize: 11, color: Colors.grey),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2563EB),
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () async {
+                Navigator.pop(ctx);
+                final nav = Navigator.of(context);
+
+                List<String> pathsToSave = List.from(controller.capturedImages);
+                if (controller.capturedImages.length == 2 && combineIdCard) {
+                  final stitched = await IdCardStitcher.stitchIdCard(
+                    frontPath: controller.capturedImages[0],
+                    backPath: controller.capturedImages[1],
+                  );
+                  if (stitched != null) {
+                    pathsToSave = [stitched];
+                  }
+                }
+                final doc = await DocumentStorageService.createDocument(
+                  name: nameController.text.trim().isEmpty
+                      ? defaultTitle
+                      : nameController.text.trim(),
+                  tempImagePaths: pathsToSave,
+                );
+
+                // Refresh home controller if active
+                if (Get.isRegistered<HomeController>()) {
+                  Get.find<HomeController>().loadDocuments();
+                }
+
+                controller.capturedImages.clear();
+
+                // Close preview and camera, reset backstack to Home and push detail view
+                if (!mounted) return;
+                nav.pushNamedAndRemoveUntil(HomeView.name, (route) => false);
+                nav.pushNamed(DocDetailVew.name, arguments: doc);
+              },
+              child: const Text('Save'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF2563EB),
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () async {
-              Navigator.pop(ctx);
-              final doc = await DocumentStorageService.createDocument(
-                name: nameController.text.trim().isEmpty
-                    ? defaultTitle
-                    : nameController.text.trim(),
-                tempImagePaths: controller.capturedImages,
-              );
-
-              // Refresh home controller if active
-              if (Get.isRegistered<HomeController>()) {
-                Get.find<HomeController>().loadDocuments();
-              }
-
-              controller.capturedImages.clear();
-
-              // Close preview and camera, reset backstack to Home and push detail view
-              if (mounted) {
-                Navigator.pushNamedAndRemoveUntil(context, HomeView.name, (route) => false);
-                Navigator.pushNamed(context, DocDetailVew.name, arguments: doc);
-              }
-            },
-            child: const Text('Save'),
-          ),
-        ],
       ),
     );
   }
@@ -167,6 +263,32 @@ class _CapturedDocListViewState extends State<CapturedDocListView> {
           GetBuilder<CustomCameraController>(
             builder: (controller) => Row(
               children: [
+                if (controller.capturedImages.length == 2)
+                  TextButton.icon(
+                    onPressed: () => _onTapCombineIdCard(controller),
+                    icon: const Icon(Icons.auto_awesome_mosaic_outlined, color: Colors.white, size: 18),
+                    label: const Text(
+                      'Combine',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                if (_uncombinedImages != null && controller.capturedImages.length == 1)
+                  TextButton.icon(
+                    onPressed: () => _onTapSeparateIdCard(controller),
+                    icon: const Icon(Icons.splitscreen_outlined, color: Colors.white70, size: 18),
+                    label: const Text(
+                      'Separate',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
                 if (controller.capturedImages.isNotEmpty &&
                     controller.currentCapturedPage < controller.capturedImages.length)
                   IconButton(
@@ -200,7 +322,7 @@ class _CapturedDocListViewState extends State<CapturedDocListView> {
                 const SizedBox(height: 12),
                 if (controller.currentCapturedPage < controller.capturedImages.length)
                   Container(
-                    padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
+                    padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 14),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(20),
                       color: Colors.white.withValues(alpha: 0.15),
@@ -208,14 +330,20 @@ class _CapturedDocListViewState extends State<CapturedDocListView> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.arrow_left_sharp, color: Colors.white70),
+                        if (controller.capturedImages.length > 1)
+                          const Icon(Icons.arrow_left_sharp, color: Colors.white70),
                         const SizedBox(width: 4),
                         Text(
-                          '${controller.currentCapturedPage + 1} / ${controller.capturedImages.length}',
+                          controller.capturedImages.length == 2
+                              ? (controller.currentCapturedPage == 0
+                                  ? 'Page 1 of 2 (Front Side)'
+                                  : 'Page 2 of 2 (Back Side)')
+                              : '${controller.currentCapturedPage + 1} / ${controller.capturedImages.length}',
                           style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(width: 4),
-                        const Icon(Icons.arrow_right_sharp, color: Colors.white70),
+                        if (controller.capturedImages.length > 1)
+                          const Icon(Icons.arrow_right_sharp, color: Colors.white70),
                       ],
                     ),
                   ),

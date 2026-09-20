@@ -4,6 +4,7 @@ import 'package:doc_scanner/core/export_path/export_path.dart';
 
 class IdCardStitcher {
   /// Stitches Front and Back ID Card images onto a clean single A4 sheet
+  /// without any 'FRONT' or 'BACK' text labels.
   static Future<String?> stitchIdCard({
     required String frontPath,
     required String backPath,
@@ -27,7 +28,7 @@ class IdCardStitcher {
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, canvasWidth, canvasHeight));
 
-      // 1. White Background
+      // 1. Clean White Background
       canvas.drawRect(
         const Rect.fromLTWH(0, 0, canvasWidth, canvasHeight),
         Paint()..color = Colors.white,
@@ -39,17 +40,18 @@ class IdCardStitcher {
       const cardHeight = cardWidth / 1.586; // ~756.6
       const cardX = (canvasWidth - cardWidth) / 2; // 200.0
 
-      const frontY = 220.0;
-      final backY = frontY + cardHeight + 200.0; // ~1176.6
+      // Centered vertical distribution for 2 cards on A4 without any labels
+      const frontY = 240.0;
+      final backY = frontY + cardHeight + 220.0; // ~1216.6
 
       final borderPaint = Paint()
-        ..color = const Color(0xFF94A3B8)
+        ..color = const Color(0xFFCBD5E1)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.0;
+        ..strokeWidth = 2.5;
 
       // Draw Front Card
       final frontRect = Rect.fromLTWH(cardX, frontY, cardWidth, cardHeight);
-      final frontRRect = RRect.fromRectAndRadius(frontRect, const Radius.circular(24));
+      final frontRRect = RRect.fromRectAndRadius(frontRect, const Radius.circular(20));
 
       canvas.save();
       canvas.clipRRect(frontRRect);
@@ -57,17 +59,14 @@ class IdCardStitcher {
         canvas: canvas,
         rect: frontRect,
         image: frontImage,
-        fit: BoxFit.cover,
+        fit: BoxFit.contain,
       );
       canvas.restore();
       canvas.drawRRect(frontRRect, borderPaint);
 
-      // Draw Front Label
-      _drawCardLabel(canvas, label: 'FRONT', origin: Offset(cardX, frontY - 32));
-
       // Draw Back Card
       final backRect = Rect.fromLTWH(cardX, backY, cardWidth, cardHeight);
-      final backRRect = RRect.fromRectAndRadius(backRect, const Radius.circular(24));
+      final backRRect = RRect.fromRectAndRadius(backRect, const Radius.circular(20));
 
       canvas.save();
       canvas.clipRRect(backRRect);
@@ -75,13 +74,10 @@ class IdCardStitcher {
         canvas: canvas,
         rect: backRect,
         image: backImage,
-        fit: BoxFit.cover,
+        fit: BoxFit.contain,
       );
       canvas.restore();
       canvas.drawRRect(backRRect, borderPaint);
-
-      // Draw Back Label
-      _drawCardLabel(canvas, label: 'BACK', origin: Offset(cardX, backY - 32));
 
       // 3. Render and save to disk
       final picture = recorder.endRecording();
@@ -105,22 +101,5 @@ class IdCardStitcher {
       Logger().e('Error stitching ID card: $e');
       return null;
     }
-  }
-
-  static void _drawCardLabel(Canvas canvas, {required String label, required Offset origin}) {
-    final textPainter = TextPainter(
-      text: TextSpan(
-        text: label,
-        style: const TextStyle(
-          color: Color(0xFF475569),
-          fontSize: 20,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 1.5,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    );
-    textPainter.layout();
-    textPainter.paint(canvas, origin);
   }
 }
