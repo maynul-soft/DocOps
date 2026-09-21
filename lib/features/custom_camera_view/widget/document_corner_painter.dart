@@ -40,20 +40,20 @@ class DocumentCornerPainter extends CustomPainter {
 
       // 1. Shaded Tint Fill — clearly highlights the detected document area
       final fillPaint = Paint()
-        ..color = const Color(0xFF2563EB).withValues(alpha: 0.22)
+        ..color = const Color(0xFF0284C7).withValues(alpha: 0.18)
         ..style = PaintingStyle.fill;
       canvas.drawPath(path, fillPaint);
 
-      // Subtle inner gradient glow for depth
+      // Subtle outer glow for high contrast against dark or light desks
       final glowPaint = Paint()
-        ..color = const Color(0xFF60A5FA).withValues(alpha: 0.12)
+        ..color = const Color(0xFF38BDF8).withValues(alpha: 0.35)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 6.0;
       canvas.drawPath(path, glowPaint);
 
-      // 2. Bold Perimeter Border (Garo/Bold Border)
+      // 2. Crisp, high-visibility perimeter border
       final borderPaint = Paint()
-        ..color = const Color(0xFF1D4ED8)
+        ..color = const Color(0xFF38BDF8)
         ..strokeWidth = 3.5
         ..style = PaintingStyle.stroke
         ..strokeCap = StrokeCap.round
@@ -73,12 +73,12 @@ class DocumentCornerPainter extends CustomPainter {
         final outerRing = Paint()
           ..color = Colors.white
           ..style = PaintingStyle.fill;
-        canvas.drawCircle(current, 7, outerRing);
+        canvas.drawCircle(current, 8, outerRing);
 
         final innerDot = Paint()
-          ..color = const Color(0xFF1D4ED8)
+          ..color = const Color(0xFF0284C7)
           ..style = PaintingStyle.fill;
-        canvas.drawCircle(current, 4.5, innerDot);
+        canvas.drawCircle(current, 5, innerDot);
 
         // Draw midpoint alignment pill
         final midpoint = Offset(

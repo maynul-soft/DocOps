@@ -1,11 +1,13 @@
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
+import 'package:flutter/services.dart';
 import 'package:doc_scanner/core/export_path/export_path.dart';
 import 'package:doc_scanner/features/edit_doc/controller/edit_doc_controller.dart';
 import 'package:doc_scanner/features/edit_doc/model/draw_model.dart';
 import 'package:doc_scanner/features/edit_doc/widget/signature_dialog.dart';
 import 'package:doc_scanner/features/edit_doc/widget/watermark_dialog.dart';
+import 'package:doc_scanner/features/edit_doc/utils/doc_filter_service.dart';
 import 'package:opencv_dart/opencv_dart.dart' as cv;
 
 class PlacedSignature {
@@ -49,6 +51,7 @@ class _EditDocViewState extends State<EditDocView> {
   int? activeCropIndex;
   Rect? imageDisplayRect;
   bool isProcessingCrop = false;
+  Uint8List? _originalBaseBytes;
 
   String? get activeImagePath =>
       _currentPath ?? widget.imagePath ?? (ModalRoute.of(context)?.settings.arguments as String?);
@@ -58,12 +61,43 @@ class _EditDocViewState extends State<EditDocView> {
     if (path == null) return;
     _currentPath = path;
 
+    if (_originalBaseBytes == null) {
+      final file = File(path);
+      if (await file.exists()) {
+        _originalBaseBytes = await file.readAsBytes();
+      }
+    }
+
     final loadedImage = await Get.find<EditDocController>().convertImage(path);
     if (mounted) {
       setState(() {
         image = loadedImage;
         cropPoints.clear();
       });
+    }
+  }
+
+  void _onSelectFilter(DocFilterType filterType, EditDocController controller) async {
+    final path = activeImagePath;
+    if (path == null) return;
+
+    if (_originalBaseBytes == null) {
+      final file = File(path);
+      if (await file.exists()) {
+        _originalBaseBytes = await file.readAsBytes();
+      }
+    }
+    if (_originalBaseBytes == null) return;
+
+    HapticFeedback.selectionClick();
+    final success = await controller.applyFilter(
+      imagePath: path,
+      originalBytes: _originalBaseBytes!,
+      filterType: filterType,
+    );
+    if (success) {
+      PaintingBinding.instance.imageCache.evict(FileImage(File(path)));
+      loadImage();
     }
   }
 
@@ -193,6 +227,11 @@ class _EditDocViewState extends State<EditDocView> {
     if (success) {
       controller.isCropping = false;
       controller.update();
+      final file = File(path);
+      if (await file.exists()) {
+        _originalBaseBytes = await file.readAsBytes();
+      }
+      PaintingBinding.instance.imageCache.evict(FileImage(File(path)));
       loadImage();
       Get.snackbar('Success', 'Document cropped and straightened');
     } else {
@@ -426,6 +465,11 @@ class _EditDocViewState extends State<EditDocView> {
     final path = activeImagePath;
     if (path == null) return;
     await controller.rotateImage(path);
+    final file = File(path);
+    if (await file.exists()) {
+      _originalBaseBytes = await file.readAsBytes();
+    }
+    PaintingBinding.instance.imageCache.evict(FileImage(File(path)));
     loadImage();
   }
 
@@ -725,7 +769,14 @@ class _EditDocViewState extends State<EditDocView> {
                             ? buildCropToolbar(editDocController)
                             : (editDocController.isDrawing
                                 ? buildDrawFeatureSection(editDocController)
-                                : buildEditOptionButtonSection(editDocController)),
+                                : Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (editDocController.isFiltering)
+                                        buildFilterTray(editDocController),
+                                      buildEditOptionButtonSection(editDocController),
+                                    ],
+                                  )),
                       ),
                     ],
                   ),
@@ -856,10 +907,82 @@ class _EditDocViewState extends State<EditDocView> {
     );
   }
 
+  Widget buildFilterTray(EditDocController editDocController) {
+    final filters = [
+      (DocFilterType.original, 'Original', Icons.filter_none),
+      (DocFilterType.magicColor, 'Magic Color', Icons.auto_fix_high),
+      (DocFilterType.totalBw, 'Total B&W', Icons.contrast),
+      (DocFilterType.grayscale, 'Grayscale', Icons.filter_b_and_w),
+      (DocFilterType.brighten, 'Brighten', Icons.wb_sunny_outlined),
+      (DocFilterType.sharpen, 'Sharpen', Icons.details),
+    ];
+
+    return Container(
+      height: 68,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white24),
+      ),
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: filters.length,
+        separatorBuilder: (context, index) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final item = filters[index];
+          final isSelected = editDocController.activeFilter == item.$1;
+          return GestureDetector(
+            onTap: () => _onSelectFilter(item.$1, editDocController),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+              decoration: BoxDecoration(
+                color: isSelected ? const Color(0xFF2563EB) : Colors.white.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isSelected ? Colors.blueAccent : Colors.transparent,
+                  width: 1.5,
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    item.$3,
+                    color: isSelected ? Colors.white : Colors.white70,
+                    size: 18,
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    item.$2,
+                    style: TextStyle(
+                      color: isSelected ? Colors.white : Colors.white70,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget buildEditOptionButtonSection(EditDocController editDocController) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceAround,
       children: [
+        buildCustomButton(
+          icon: Icons.auto_fix_high,
+          onTap: () => editDocController.toggleFilterMode(),
+          title: 'Filters',
+          color: editDocController.isFiltering ? Colors.blue : Colors.white,
+        ),
         buildCustomButton(
           icon: Icons.crop,
           onTap: () => _onEnterCropMode(editDocController),

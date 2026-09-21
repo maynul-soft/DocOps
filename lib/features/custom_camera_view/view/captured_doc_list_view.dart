@@ -364,17 +364,34 @@ class _CapturedDocListViewState extends State<CapturedDocListView> {
                               ),
                               child: Stack(
                                 children: [
-                                  // Whole Card is fully clickable to Edit
+                                  // Whole Card with Pinch-to-Zoom & Double-Tap Zoom
                                   Positioned.fill(
-                                    child: GestureDetector(
-                                      behavior: HitTestBehavior.opaque,
-                                      onTap: () => _openEditPage(index),
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(16),
-                                        child: Image.file(
-                                          File(controller.capturedImages[index]),
-                                          fit: BoxFit.contain,
-                                        ),
+                                    child: ZoomableDocCard(
+                                      imagePath: controller.capturedImages[index],
+                                      onEdit: () => _openEditPage(index),
+                                    ),
+                                  ),
+                                  // Zoom hint pill (top left)
+                                  Positioned(
+                                    top: 12,
+                                    left: 12,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withValues(alpha: 0.65),
+                                        borderRadius: BorderRadius.circular(20),
+                                        border: Border.all(color: Colors.white24),
+                                      ),
+                                      child: const Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.zoom_in, color: Colors.white, size: 14),
+                                          SizedBox(width: 4),
+                                          Text(
+                                            'Pinch to Zoom',
+                                            style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ),
@@ -526,6 +543,77 @@ class _CapturedDocListViewState extends State<CapturedDocListView> {
               style: TextStyle(color: Color(0xFF60A5FA), fontWeight: FontWeight.bold, fontSize: 16),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class ZoomableDocCard extends StatefulWidget {
+  final String imagePath;
+  final VoidCallback onEdit;
+
+  const ZoomableDocCard({
+    super.key,
+    required this.imagePath,
+    required this.onEdit,
+  });
+
+  @override
+  State<ZoomableDocCard> createState() => _ZoomableDocCardState();
+}
+
+class _ZoomableDocCardState extends State<ZoomableDocCard> {
+  final TransformationController _transformationController = TransformationController();
+  bool _isZoomed = false;
+
+  void _onDoubleTapDown(TapDownDetails details) {
+    if (_isZoomed) {
+      _transformationController.value = Matrix4.identity();
+      setState(() => _isZoomed = false);
+    } else {
+      final pos = details.localPosition;
+      final x = -pos.dx * 1.5;
+      final y = -pos.dy * 1.5;
+      _transformationController.value = Matrix4.diagonal3Values(2.5, 2.5, 1.0)
+        ..setTranslationRaw(x, y, 0.0);
+      setState(() => _isZoomed = true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _transformationController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onDoubleTapDown: _onDoubleTapDown,
+      onDoubleTap: () {},
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          color: Colors.black,
+          child: InteractiveViewer(
+            transformationController: _transformationController,
+            minScale: 1.0,
+            maxScale: 5.0,
+            clipBehavior: Clip.antiAlias,
+            onInteractionEnd: (_) {
+              final scale = _transformationController.value.getMaxScaleOnAxis();
+              if ((scale > 1.05) != _isZoomed) {
+                setState(() => _isZoomed = scale > 1.05);
+              }
+            },
+            child: Center(
+              child: Image.file(
+                File(widget.imagePath),
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
         ),
       ),
     );

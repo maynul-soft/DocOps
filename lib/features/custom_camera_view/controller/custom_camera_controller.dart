@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/services.dart';
 import 'package:doc_scanner/core/export_path/export_path.dart';
 import 'package:doc_scanner/features/custom_camera_view/controller/test_open_cv.dart';
@@ -306,37 +307,59 @@ class CustomCameraController extends GetxController {
     if (isCapturing) return null;
     try {
       isCapturing = true;
-      isFlashing = true; // Trigger flash animation
+
+      // Instant 120ms shutter blink & haptic feedback like a screenshot
+      isFlashing = true;
+      HapticFeedback.heavyImpact();
       update();
 
-      // Take the picture
-      XFile image = await cameraController!.takePicture();
-      final bytes = await image.readAsBytes();
-
-      // End flash after a short delay
-      Future.delayed(const Duration(milliseconds: 100), () {
+      Future.delayed(const Duration(milliseconds: 120), () {
         isFlashing = false;
-        isSavingDoc = true; // Trigger "saving" animation
+        isSavingDoc = true;
         update();
       });
 
-      // Convert to Mat for processing
+      // Take picture
+      final XFile image = await cameraController!.takePicture();
+      final bytes = await image.readAsBytes();
+
+      // Convert to Mat for high-speed perspective warp
       final mat = cv.imdecode(bytes, cv.IMREAD_COLOR);
 
-      // Use smoothed corners if available, else detect in high-res
-      List<cv.Point>? finalCorners = corners;
-      if (finalCorners == null || finalCorners.length != 4) {
-        if (TfliteService.isLoaded) {
-          finalCorners = TfliteService.detectDocument(mat);
-        }
-        finalCorners ??= TestOpenCv.processDocuments(mat);
+      List<cv.Point>? finalCorners;
+
+      // 1. High Performance: Reuse live detected smoothed corners if available (instant 0.01ms!)
+      if (corners != null && corners!.length == 4 && imageSize != null) {
+        final scaleX = mat.cols / imageSize!.width;
+        final scaleY = mat.rows / imageSize!.height;
+        finalCorners = corners!.map((p) => cv.Point(
+          (p.x * scaleX).toInt().clamp(0, mat.cols - 1),
+          (p.y * scaleY).toInt().clamp(0, mat.rows - 1),
+        )).toList();
       }
 
-      // If in ID Card or Passport mode and no corners were reliably detected,
-      // fallback to the exact landscape frame matching the on-screen guide
+      // 2. Fast Downscaled Fallback Detection if live corners were absent
+      if (finalCorners == null || finalCorners.length != 4) {
+        final downScale = 500.0 / math.max(mat.cols, mat.rows);
+        final smallMat = cv.resize(mat, (0, 0), fx: downScale, fy: downScale);
+        List<cv.Point>? smallCorners;
+        if (TfliteService.isLoaded) {
+          smallCorners = TfliteService.detectDocument(smallMat);
+        }
+        smallCorners ??= TestOpenCv.processDocuments(smallMat);
+        smallMat.dispose();
+
+        if (smallCorners != null && smallCorners.length == 4) {
+          finalCorners = smallCorners.map((p) => cv.Point(
+            (p.x / downScale).toInt().clamp(0, mat.cols - 1),
+            (p.y / downScale).toInt().clamp(0, mat.rows - 1),
+          )).toList();
+        }
+      }
+
+      // 3. ID Card & Passport fallback: exact landscape box matching guide overlay
       if (finalCorners == null || finalCorners.length != 4) {
         if (scanMode == CameraScanMode.idCard) {
-          // Standard ID-1 1.586 : 1 landscape card box
           final cropW = (mat.width * 0.90).toInt();
           final cropH = (cropW / 1.586).toInt();
           final cropX = ((mat.width - cropW) / 2).toInt();
@@ -348,7 +371,6 @@ class CustomCameraController extends GetxController {
             cv.Point(cropX, cropY + cropH),
           ];
         } else if (scanMode == CameraScanMode.passport) {
-          // Standard ID-3 1.42 : 1 landscape passport box
           final cropW = (mat.width * 0.92).toInt();
           final cropH = (cropW / 1.42).toInt();
           final cropX = ((mat.width - cropW) / 2).toInt();

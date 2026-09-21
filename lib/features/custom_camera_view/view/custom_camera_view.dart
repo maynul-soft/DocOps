@@ -320,30 +320,64 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
       child: Stack(
         children: [
           Positioned.fill(child: CameraPreview(cam)),
-          // Flash Effect
-          if (controller.isFlashing)
-            Positioned.fill(
+          // Screenshot-style rapid shutter flash
+          IgnorePointer(
+            ignoring: true,
+            child: AnimatedOpacity(
+              opacity: controller.isFlashing ? 0.8 : 0.0,
+              duration: const Duration(milliseconds: 120),
+              curve: Curves.easeOut,
               child: Container(
                 color: Colors.white,
               ),
             ),
-          // Document Saving Animation
+          ),
+          // Sleek non-blocking processing capsule
           if (controller.isSavingDoc)
-            Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const CircularProgressIndicator(color: Colors.white),
-                  const SizedBox(height: 10),
-                  Text(
-                    controller.scanMode == CameraScanMode.idCard
-                        ? (controller.idCardStep == 2 ? 'Stitching ID Card...' : 'Saving Front...')
-                        : 'Enhancing...',
-                    style: CustomTextTheme.fontSize14(context).copyWith(
-                      color: Colors.white,
-                    ),
+            Positioned(
+              bottom: 24,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.75),
+                    borderRadius: BorderRadius.circular(25),
+                    border: Border.all(color: Colors.white24),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Colors.black45,
+                        blurRadius: 10,
+                        offset: Offset(0, 4),
+                      ),
+                    ],
                   ),
-                ],
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          color: Color(0xFF60A5FA),
+                          strokeWidth: 2.2,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        controller.scanMode == CameraScanMode.idCard
+                            ? (controller.idCardStep == 2 ? 'Stitching ID Card...' : 'Saving Front...')
+                            : 'Enhancing...',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           // ID Card & Passport Alignment Guideline Overlay

@@ -5,6 +5,7 @@ import 'package:doc_scanner/core/export_path/export_path.dart';
 import 'package:doc_scanner/core/services/tflite/tflite_service.dart';
 import 'package:doc_scanner/features/custom_camera_view/controller/test_open_cv.dart';
 import 'package:doc_scanner/features/edit_doc/model/draw_model.dart';
+import 'package:doc_scanner/features/edit_doc/utils/doc_filter_service.dart';
 import 'package:opencv_dart/opencv_dart.dart' as cv;
 
 class EditDocController extends GetxController {
@@ -46,15 +47,33 @@ class EditDocController extends GetxController {
     }
   }
 
+  bool isFiltering = false;
+  DocFilterType activeFilter = DocFilterType.original;
+
   void onTapToDraw() {
     isDrawing = !isDrawing;
-    if (isDrawing) isCropping = false;
+    if (isDrawing) {
+      isCropping = false;
+      isFiltering = false;
+    }
     update();
   }
 
   void toggleCropMode() {
     isCropping = !isCropping;
-    if (isCropping) isDrawing = false;
+    if (isCropping) {
+      isDrawing = false;
+      isFiltering = false;
+    }
+    update();
+  }
+
+  void toggleFilterMode() {
+    isFiltering = !isFiltering;
+    if (isFiltering) {
+      isDrawing = false;
+      isCropping = false;
+    }
     update();
   }
 
@@ -130,6 +149,30 @@ class EditDocController extends GetxController {
       return success;
     } catch (e) {
       Logger().e('Failed to rotate image: $e');
+      return false;
+    }
+  }
+
+  /// Applies selected document filter to the image using base image bytes
+  Future<bool> applyFilter({
+    required String imagePath,
+    required Uint8List originalBytes,
+    required DocFilterType filterType,
+  }) async {
+    try {
+      activeFilter = filterType;
+      final processedBytes = await DocFilterService.applyFilterToBytes(
+        inputBytes: originalBytes,
+        filterType: filterType,
+      );
+      if (processedBytes == null) return false;
+
+      final file = File(imagePath);
+      await file.writeAsBytes(processedBytes);
+      update();
+      return true;
+    } catch (e) {
+      Logger().e('Failed to apply filter: $e');
       return false;
     }
   }
